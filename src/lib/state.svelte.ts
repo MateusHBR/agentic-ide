@@ -139,12 +139,24 @@ class AppState {
     }
   }
 
+  async refreshAllProjects() {
+    for (const project of this.projects) {
+      await this.refreshProject(project.path);
+    }
+  }
+
   startPolling() {
     if (this._pollActive) return;
     this._pollActive = true;
+    let pollCount = 0;
     this._pollInterval = setInterval(() => {
       if (this.activeWorktree && (this.rightTab === "changes" || this.rightTab === "timeline" || this.rightTab === "info")) {
         this.refreshRightPanel();
+      }
+      // Refresh worktree lists every ~10 seconds (every 5th poll)
+      pollCount++;
+      if (pollCount % 5 === 0) {
+        this.refreshAllProjects();
       }
     }, 2000);
   }
