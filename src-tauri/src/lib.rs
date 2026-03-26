@@ -2,7 +2,12 @@ mod terminal;
 mod worktree;
 
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager, State, WindowEvent,
+};
+use tauri_plugin_autostart::MacosLauncher;
 
 // --- Terminal Commands ---
 
@@ -115,6 +120,16 @@ fn unstage_file(worktree_path: String, file: String) -> Result<(), String> {
     worktree::unstage_file(&worktree_path, &file)
 }
 
+#[tauri::command]
+fn read_file_base64(worktree_path: String, file: String) -> Result<String, String> {
+    worktree::read_file_base64(&worktree_path, &file)
+}
+
+#[tauri::command]
+fn read_git_file_base64(worktree_path: String, file: String) -> Result<String, String> {
+    worktree::read_git_file_base64(&worktree_path, &file)
+}
+
 // --- App Setup ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -122,6 +137,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(Mutex::new(terminal::TerminalManager::new()) as terminal::TerminalState)
         .invoke_handler(tauri::generate_handler![
             create_terminal,
@@ -139,7 +158,63 @@ pub fn run() {
             get_file_diff,
             stage_file,
             unstage_file,
+            read_file_base64,
+            read_git_file_base64,
         ])
+        .setup(|app| {
+            // Build tray menu
+            let open_item = MenuItem::with_id(app, "open", "Open Agentic IDE", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+
+            // Create tray icon (monochrome template for macOS)
+            let tray_icon_bytes = include_bytes!("../icons/tray.png");
+            let tray_image = tauri::image::Image::from_bytes(tray_icon_bytes)?.to_owned();
+
+            TrayIconBuilder::new()
+                .icon(tray_image)
+                .icon_as_template(true)
+                .tooltip("Agentic IDE")
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "open" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Hide to tray instead of closing
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

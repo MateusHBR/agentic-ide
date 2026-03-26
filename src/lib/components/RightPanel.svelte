@@ -114,6 +114,49 @@
     }
   }
 
+  const IMAGE_EXTENSIONS = new Set([
+    "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico", "tiff", "tif", "avif",
+  ]);
+
+  function isImageFile(file: string): boolean {
+    const ext = file.split(".").pop()?.toLowerCase() ?? "";
+    return IMAGE_EXTENSIONS.has(ext);
+  }
+
+  function getMimeType(file: string): string {
+    const ext = file.split(".").pop()?.toLowerCase() ?? "";
+    const mimes: Record<string, string> = {
+      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+      gif: "image/gif", bmp: "image/bmp", webp: "image/webp",
+      svg: "image/svg+xml", ico: "image/x-icon", tiff: "image/tiff",
+      tif: "image/tiff", avif: "image/avif",
+    };
+    return mimes[ext] ?? "image/png";
+  }
+
+  let imageCache = $state<Map<string, { current?: string; previous?: string }>>(new Map());
+
+  async function loadImagePreview(file: string) {
+    if (!appState.activeWorktree || imageCache.has(file)) return;
+    const mime = getMimeType(file);
+    const entry: { current?: string; previous?: string } = {};
+    try {
+      const b64: string = await invoke("read_file_base64", {
+        worktreePath: appState.activeWorktree, file,
+      });
+      entry.current = `data:${mime};base64,${b64}`;
+    } catch (_) {}
+    try {
+      const b64: string = await invoke("read_git_file_base64", {
+        worktreePath: appState.activeWorktree, file,
+      });
+      entry.previous = `data:${mime};base64,${b64}`;
+    } catch (_) {}
+    const updated = new Map(imageCache);
+    updated.set(file, entry);
+    imageCache = updated;
+  }
+
   interface DiffLine {
     type: string;
     content: string;
@@ -274,6 +317,16 @@
 
   let hasUnstaged = $derived(unstagedFiles.length > 0 || unstagedStatusOnly.length > 0);
   let hasStaged = $derived(stagedFiles.length > 0 || stagedStatusOnly.length > 0);
+
+  // Auto-load image previews for image files in status
+  $effect(() => {
+    const allFiles = appState.gitStatus;
+    for (const f of allFiles) {
+      if (isImageFile(f.file) && !imageCache.has(f.file)) {
+        loadImagePreview(f.file);
+      }
+    }
+  });
 </script>
 
 <div class="right-panel">
@@ -483,12 +536,37 @@
                 <div class="diff-file">
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div class="diff-file-header" onclick={() => stageFile(file.file)}>
-                    <span class="collapse-icon" style="visibility: hidden">▶</span>
-                    <span class="stage-checkbox"></span>
+                  <div class="diff-file-header" onclick={() => {
+                    if (isImageFile(file.file)) {
+                      toggleCollapse("unstaged:" + file.file);
+                      loadImagePreview(file.file);
+                    } else {
+                      stageFile(file.file);
+                    }
+                  }}>
+                    <span class="collapse-icon">{isImageFile(file.file) ? (isCollapsed("unstaged:" + file.file) ? "▶" : "▼") : ""}</span>
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <span class="stage-checkbox" onclick={(e) => { e.stopPropagation(); stageFile(file.file); }}></span>
                     <span class="diff-file-name">{file.file}</span>
                     <span class="status-label" style="color: {statusColor(file.status)}">{formatStatus(file.status)}</span>
                   </div>
+                  {#if isImageFile(file.file) && !isCollapsed("unstaged:" + file.file) && imageCache.has(file.file)}
+                    <div class="image-preview">
+                      {#if imageCache.get(file.file)?.previous}
+                        <div class="image-side">
+                          <span class="image-label removed">Previous</span>
+                          <img src={imageCache.get(file.file)?.previous} alt="Previous version" />
+                        </div>
+                      {/if}
+                      {#if imageCache.get(file.file)?.current}
+                        <div class="image-side">
+                          <span class="image-label added">Current</span>
+                          <img src={imageCache.get(file.file)?.current} alt="Current version" />
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
               {/each}
               {/if}
@@ -579,14 +657,39 @@
                 <div class="diff-file staged">
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div class="diff-file-header" onclick={() => unstageFile(file.file)}>
-                    <span class="collapse-icon" style="visibility: hidden">▶</span>
-                    <span class="stage-checkbox staged">
+                  <div class="diff-file-header" onclick={() => {
+                    if (isImageFile(file.file)) {
+                      toggleCollapse("staged:" + file.file);
+                      loadImagePreview(file.file);
+                    } else {
+                      unstageFile(file.file);
+                    }
+                  }}>
+                    <span class="collapse-icon">{isImageFile(file.file) ? (isCollapsed("staged:" + file.file) ? "▶" : "▼") : ""}</span>
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <span class="stage-checkbox staged" onclick={(e) => { e.stopPropagation(); unstageFile(file.file); }}>
                       <span class="check-mark">✓</span>
                     </span>
                     <span class="diff-file-name">{file.file}</span>
                     <span class="status-label" style="color: {statusColor(file.status)}">{formatStatus(file.status)}</span>
                   </div>
+                  {#if isImageFile(file.file) && !isCollapsed("staged:" + file.file) && imageCache.has(file.file)}
+                    <div class="image-preview">
+                      {#if imageCache.get(file.file)?.previous}
+                        <div class="image-side">
+                          <span class="image-label removed">Previous</span>
+                          <img src={imageCache.get(file.file)?.previous} alt="Previous version" />
+                        </div>
+                      {/if}
+                      {#if imageCache.get(file.file)?.current}
+                        <div class="image-side">
+                          <span class="image-label added">Current</span>
+                          <img src={imageCache.get(file.file)?.current} alt="Current version" />
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
               {/each}
               {/if}
@@ -1170,6 +1273,51 @@
   .diff-content {
     flex: 1;
     min-width: 0;
+  }
+
+  .image-preview {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    background: #0d1117;
+    border-top: 1px solid #21262d;
+  }
+
+  .image-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .image-side img {
+    max-width: 100%;
+    max-height: 200px;
+    object-fit: contain;
+    border-radius: 4px;
+    border: 1px solid #30363d;
+    background: repeating-conic-gradient(#1c1c1e 0% 25%, #2a2a2c 0% 50%) 50% / 16px 16px;
+  }
+
+  .image-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .image-label.removed {
+    color: #ff7b72;
+    background: rgba(248, 81, 73, 0.1);
+  }
+
+  .image-label.added {
+    color: #3fb950;
+    background: rgba(63, 185, 80, 0.1);
   }
 
   .empty-message {

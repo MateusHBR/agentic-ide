@@ -1,11 +1,39 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { appState } from "$lib/state.svelte";
   import type { LayoutMode } from "$lib/state.svelte";
+  import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
 
   interface Props {
     onClose: () => void;
   }
   let { onClose }: Props = $props();
+
+  let autoStartEnabled = $state(false);
+  let autoStartLoading = $state(false);
+
+  onMount(async () => {
+    try {
+      autoStartEnabled = await isEnabled();
+    } catch (e) {
+      console.error("Failed to check autostart:", e);
+    }
+  });
+
+  async function toggleAutoStart() {
+    autoStartLoading = true;
+    try {
+      if (autoStartEnabled) {
+        await disable();
+      } else {
+        await enable();
+      }
+      autoStartEnabled = await isEnabled();
+    } catch (e) {
+      console.error("Failed to toggle autostart:", e);
+    }
+    autoStartLoading = false;
+  }
 
   const shortcuts = [
     { keys: "⌘ N", description: "New terminal in active worktree" },
@@ -99,6 +127,26 @@
               <div class="lp-bottom"></div>
             </div>
             <span class="layout-label">Horizontal</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3 class="section-title">General</h3>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-label">Launch at startup</span>
+            <span class="setting-desc">Automatically start Agentic IDE when you log in</span>
+          </div>
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="toggle-switch"
+            class:on={autoStartEnabled}
+            class:loading={autoStartLoading}
+            onclick={toggleAutoStart}
+          >
+            <div class="toggle-knob"></div>
           </div>
         </div>
       </div>
@@ -344,6 +392,67 @@
     flex: 1;
     background: #161b22;
     border-radius: 2px;
+  }
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 6px;
+  }
+
+  .setting-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .setting-label {
+    font-size: 13px;
+    color: #e6edf3;
+    font-weight: 500;
+  }
+
+  .setting-desc {
+    font-size: 11px;
+    color: #636366;
+  }
+
+  .toggle-switch {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: #3a3a3c;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch.on {
+    background: #30d158;
+  }
+
+  .toggle-switch.loading {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .toggle-knob {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .toggle-switch.on .toggle-knob {
+    transform: translateX(20px);
   }
 
   .about-row {

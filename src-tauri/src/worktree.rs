@@ -249,6 +249,75 @@ pub fn unstage_file(worktree_path: &str, file: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn read_file_base64(worktree_path: &str, file: &str) -> Result<String, String> {
+    use std::fs;
+    use std::path::Path;
+
+    let full_path = Path::new(worktree_path).join(file);
+    let bytes = fs::read(&full_path).map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let mut encoded = String::new();
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut i = 0;
+    while i < bytes.len() {
+        let b0 = bytes[i] as u32;
+        let b1 = if i + 1 < bytes.len() { bytes[i + 1] as u32 } else { 0 };
+        let b2 = if i + 2 < bytes.len() { bytes[i + 2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        encoded.push(alphabet[((triple >> 18) & 0x3F) as usize] as char);
+        encoded.push(alphabet[((triple >> 12) & 0x3F) as usize] as char);
+        if i + 1 < bytes.len() {
+            encoded.push(alphabet[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            encoded.push('=');
+        }
+        if i + 2 < bytes.len() {
+            encoded.push(alphabet[(triple & 0x3F) as usize] as char);
+        } else {
+            encoded.push('=');
+        }
+        i += 3;
+    }
+    Ok(encoded)
+}
+
+pub fn read_git_file_base64(worktree_path: &str, file: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(["show", &format!("HEAD:{}", file)])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to read git file: {}", e))?;
+
+    if !output.status.success() {
+        return Err("File not in HEAD".to_string());
+    }
+
+    let bytes = &output.stdout;
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b0 = bytes[i] as u32;
+        let b1 = if i + 1 < bytes.len() { bytes[i + 1] as u32 } else { 0 };
+        let b2 = if i + 2 < bytes.len() { bytes[i + 2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        encoded.push(alphabet[((triple >> 18) & 0x3F) as usize] as char);
+        encoded.push(alphabet[((triple >> 12) & 0x3F) as usize] as char);
+        if i + 1 < bytes.len() {
+            encoded.push(alphabet[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            encoded.push('=');
+        }
+        if i + 2 < bytes.len() {
+            encoded.push(alphabet[(triple & 0x3F) as usize] as char);
+        } else {
+            encoded.push('=');
+        }
+        i += 3;
+    }
+    Ok(encoded)
+}
+
 pub fn remove_worktree(project_path: &str, worktree_path: &str) -> Result<(), String> {
     let output = Command::new("git")
         .args(["worktree", "remove", worktree_path])
