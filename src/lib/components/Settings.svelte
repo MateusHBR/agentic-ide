@@ -159,7 +159,7 @@
         </div>
         <div class="about-row">
           <span class="about-label">Version</span>
-          <span class="about-value">0.1.0</span>
+          <span class="about-value">0.1.1</span>
         </div>
       </div>
     </div>
