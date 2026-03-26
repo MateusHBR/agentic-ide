@@ -3,6 +3,7 @@
   import { appState } from "$lib/state.svelte";
   import type { LayoutMode } from "$lib/state.svelte";
   import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
+  import { check } from "@tauri-apps/plugin-updater";
 
   interface Props {
     onClose: () => void;
@@ -11,6 +12,10 @@
 
   let autoStartEnabled = $state(false);
   let autoStartLoading = $state(false);
+  let updateStatus = $state<"idle" | "checking" | "available" | "downloading" | "ready" | "up-to-date" | "error">("idle");
+  let updateVersion = $state("");
+  let updateError = $state("");
+  let downloadProgress = $state(0);
 
   onMount(async () => {
     try {
@@ -33,6 +38,44 @@
       console.error("Failed to toggle autostart:", e);
     }
     autoStartLoading = false;
+  }
+
+  async function checkForUpdates() {
+    updateStatus = "checking";
+    updateError = "";
+    try {
+      const update = await check();
+      if (update) {
+        updateVersion = update.version;
+        updateStatus = "available";
+      } else {
+        updateStatus = "up-to-date";
+      }
+    } catch (e: any) {
+      updateStatus = "error";
+      updateError = e?.message ?? String(e);
+    }
+  }
+
+  async function downloadAndInstall() {
+    updateStatus = "downloading";
+    try {
+      const update = await check();
+      if (!update) return;
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started" && event.data.contentLength) {
+          downloadProgress = 0;
+        } else if (event.event === "Progress") {
+          downloadProgress += event.data.chunkLength;
+        } else if (event.event === "Finished") {
+          updateStatus = "ready";
+        }
+      });
+      updateStatus = "ready";
+    } catch (e: any) {
+      updateStatus = "error";
+      updateError = e?.message ?? String(e);
+    }
   }
 
   const shortcuts = [
@@ -152,6 +195,34 @@
       </div>
 
       <div class="section">
+        <h3 class="section-title">Updates</h3>
+        <div class="update-row">
+          {#if updateStatus === "idle"}
+            <span class="update-text">Check if a new version is available</span>
+            <button class="update-btn" onclick={checkForUpdates}>Check for Updates</button>
+          {:else if updateStatus === "checking"}
+            <span class="update-text">Checking for updates...</span>
+          {:else if updateStatus === "up-to-date"}
+            <span class="update-text success">You're on the latest version</span>
+            <button class="update-btn" onclick={checkForUpdates}>Check Again</button>
+          {:else if updateStatus === "available"}
+            <span class="update-text">Version {updateVersion} is available</span>
+            <button class="update-btn primary" onclick={downloadAndInstall}>Download & Install</button>
+          {:else if updateStatus === "downloading"}
+            <span class="update-text">Downloading update...</span>
+            <div class="progress-bar">
+              <div class="progress-fill"></div>
+            </div>
+          {:else if updateStatus === "ready"}
+            <span class="update-text success">Update installed! Restart the app to apply.</span>
+          {:else if updateStatus === "error"}
+            <span class="update-text error">Failed: {updateError}</span>
+            <button class="update-btn" onclick={checkForUpdates}>Retry</button>
+          {/if}
+        </div>
+      </div>
+
+      <div class="section">
         <h3 class="section-title">About</h3>
         <div class="about-row">
           <span class="about-label">Application</span>
@@ -159,7 +230,7 @@
         </div>
         <div class="about-row">
           <span class="about-label">Version</span>
-          <span class="about-value">0.1.1</span>
+          <span class="about-value">0.2.0</span>
         </div>
       </div>
     </div>
@@ -453,6 +524,76 @@
 
   .toggle-switch.on .toggle-knob {
     transform: translateX(20px);
+  }
+
+  .update-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 6px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .update-text {
+    font-size: 13px;
+    color: #8b949e;
+  }
+
+  .update-text.success {
+    color: #30d158;
+  }
+
+  .update-text.error {
+    color: #ff7b72;
+    font-size: 12px;
+  }
+
+  .update-btn {
+    padding: 6px 14px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #e6edf3;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+
+  .update-btn:hover {
+    background: #30363d;
+  }
+
+  .update-btn.primary {
+    background: #238636;
+    border-color: #2ea043;
+  }
+
+  .update-btn.primary:hover {
+    background: #2ea043;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 4px;
+    background: #21262d;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: #58a6ff;
+    border-radius: 2px;
+    animation: progress-indeterminate 1.5s ease-in-out infinite;
+  }
+
+  @keyframes progress-indeterminate {
+    0% { width: 0%; margin-left: 0; }
+    50% { width: 60%; margin-left: 20%; }
+    100% { width: 0%; margin-left: 100%; }
   }
 
   .about-row {

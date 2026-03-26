@@ -1,6 +1,6 @@
 {
   "name": "agentic-ide",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "",
   "type": "module",
   "scripts": {
@@ -17,6 +17,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-autostart": "^2",
+    "@tauri-apps/plugin-updater": "^2",
     "@xterm/xterm": "^5.5.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0"
