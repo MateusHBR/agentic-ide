@@ -1,0 +1,242 @@
+import { invoke } from "@tauri-apps/api/core";
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  head: string;
+  is_main: boolean;
+  is_bare: boolean;
+}
+
+export interface ProjectInfo {
+  name: string;
+  path: string;
+  worktrees: WorktreeInfo[];
+}
+
+export interface TerminalInfo {
+  id: string;
+  name: string;
+  worktreePath: string;
+}
+
+export interface LogEntry {
+  hash: string;
+  short_hash: string;
+  author: string;
+  relative_time: string;
+  message: string;
+}
+
+export interface FileStatus {
+  status: string;
+  file: string;
+}
+
+export type RightTab = "info" | "timeline" | "agent" | "changes";
+export type LayoutMode = "vertical" | "horizontal";
+
+class AppState {
+  projects = $state<ProjectInfo[]>([]);
+  activeWorktree = $state<string>("");
+  activeProject = $state<string>("");
+  terminals = $state<TerminalInfo[]>([]);
+  activeTerminalId = $state<string>("");
+  rightTab = $state<RightTab>("changes");
+  diff = $state<string>("");
+  stagedDiff = $state<string>("");
+  gitLog = $state<LogEntry[]>([]);
+  gitStatus = $state<FileStatus[]>([]);
+  sidebarWidth = $state(280);
+  sidebarCollapsed = $state(false);
+  rightPanelCollapsed = $state(false);
+  layout = $state<LayoutMode>(
+    (localStorage.getItem("agentic-ide-layout") as LayoutMode) || "vertical"
+  );
+  private _pollInterval: ReturnType<typeof setInterval> | null = null;
+  private _pollActive = false;
+  private _lastTerminalPerWorktree = new Map<string, string>();
+
+  async addProject(path: string) {
+    try {
+      const info: ProjectInfo = await invoke("get_project_info", {
+        projectPath: path,
+      });
+      const exists = this.projects.some((p) => p.path === info.path);
+      if (!exists) {
+        this.projects.push(info);
+        if (!this.activeProject) {
+          this.activeProject = info.path;
+          if (info.worktrees.length > 0) {
+            this.activeWorktree = info.worktrees[0].path;
+          }
+        }
+        this.saveProjects();
+      }
+    } catch (e) {
+      console.error("Failed to add project:", e);
+    }
+  }
+
+  async refreshProject(path: string) {
+    try {
+      const info: ProjectInfo = await invoke("get_project_info", {
+        projectPath: path,
+      });
+      const idx = this.projects.findIndex((p) => p.path === path);
+      if (idx >= 0) {
+        this.projects[idx] = info;
+      }
+    } catch (e) {
+      console.error("Failed to refresh project:", e);
+    }
+  }
+
+  removeProject(path: string) {
+    this.projects = this.projects.filter((p) => p.path !== path);
+    if (this.activeProject === path) {
+      this.activeProject = this.projects[0]?.path ?? "";
+    }
+    this.saveProjects();
+  }
+
+  selectWorktree(projectPath: string, worktreePath: string) {
+    // Save current terminal for the worktree we're leaving
+    if (this.activeWorktree && this.activeTerminalId) {
+      this._lastTerminalPerWorktree.set(this.activeWorktree, this.activeTerminalId);
+    }
+
+    this.activeProject = projectPath;
+    this.activeWorktree = worktreePath;
+
+    // Restore last terminal for the target worktree, or fall back to first
+    const lastTermId = this._lastTerminalPerWorktree.get(worktreePath);
+    const lastTerm = lastTermId ? this.terminals.find((t) => t.id === lastTermId) : null;
+    if (lastTerm && lastTerm.worktreePath === worktreePath) {
+      this.activeTerminalId = lastTerm.id;
+    } else {
+      const wtTerminals = this.getTerminalsForWorktree(worktreePath);
+      this.activeTerminalId = wtTerminals[0]?.id ?? "";
+    }
+    this.refreshRightPanel();
+  }
+
+  async refreshRightPanel() {
+    if (!this.activeWorktree) return;
+    try {
+      const [diff, stagedDiff, log, status] = await Promise.all([
+        invoke("get_diff", { worktreePath: this.activeWorktree }) as Promise<string>,
+        invoke("get_staged_diff", { worktreePath: this.activeWorktree }) as Promise<string>,
+        invoke("get_git_log", { worktreePath: this.activeWorktree }) as Promise<LogEntry[]>,
+        invoke("get_git_status", { worktreePath: this.activeWorktree }) as Promise<FileStatus[]>,
+      ]);
+      this.diff = diff;
+      this.stagedDiff = stagedDiff;
+      this.gitLog = log;
+      this.gitStatus = status;
+    } catch (e) {
+      console.error("Failed to refresh panel:", e);
+    }
+  }
+
+  startPolling() {
+    if (this._pollActive) return;
+    this._pollActive = true;
+    this._pollInterval = setInterval(() => {
+      if (this.activeWorktree && (this.rightTab === "changes" || this.rightTab === "timeline" || this.rightTab === "info")) {
+        this.refreshRightPanel();
+      }
+    }, 2000);
+  }
+
+  stopPolling() {
+    this._pollActive = false;
+    if (this._pollInterval) {
+      clearInterval(this._pollInterval);
+      this._pollInterval = null;
+    }
+  }
+
+  addTerminal(terminal: TerminalInfo) {
+    this.terminals.push(terminal);
+    this.setActiveTerminal(terminal.id);
+  }
+
+  setActiveTerminal(id: string) {
+    this.activeTerminalId = id;
+    const term = this.terminals.find((t) => t.id === id);
+    if (term) {
+      this._lastTerminalPerWorktree.set(term.worktreePath, id);
+      const ownerProject = this.projects.find((p) =>
+        p.worktrees.some((w) => w.path === term.worktreePath)
+      );
+      if (ownerProject) {
+        this.activeProject = ownerProject.path;
+        this.activeWorktree = term.worktreePath;
+      }
+    }
+  }
+
+  removeTerminal(id: string) {
+    const removed = this.terminals.find((t) => t.id === id);
+    this.terminals = this.terminals.filter((t) => t.id !== id);
+    // Clean up last-terminal tracking
+    if (removed && this._lastTerminalPerWorktree.get(removed.worktreePath) === id) {
+      this._lastTerminalPerWorktree.delete(removed.worktreePath);
+    }
+    if (this.activeTerminalId === id) {
+      const wtTerminals = this.activeWorktree
+        ? this.getTerminalsForWorktree(this.activeWorktree)
+        : [];
+      this.activeTerminalId = wtTerminals[0]?.id ?? this.terminals[0]?.id ?? "";
+    }
+  }
+
+  renameTerminal(id: string, name: string) {
+    const term = this.terminals.find((t) => t.id === id);
+    if (term) {
+      term.name = name;
+    }
+  }
+
+  reorderTerminals(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
+    const item = this.terminals.splice(fromIndex, 1)[0];
+    if (item) {
+      this.terminals.splice(toIndex, 0, item);
+    }
+  }
+
+  getTerminalsForWorktree(worktreePath: string): TerminalInfo[] {
+    return this.terminals.filter((t) => t.worktreePath === worktreePath);
+  }
+
+  getTerminalsForProject(projectPath: string): TerminalInfo[] {
+    const project = this.projects.find((p) => p.path === projectPath);
+    if (!project) return [];
+    const wtPaths = new Set(project.worktrees.map((w) => w.path));
+    return this.terminals.filter((t) => wtPaths.has(t.worktreePath));
+  }
+
+  setLayout(mode: LayoutMode) {
+    this.layout = mode;
+    localStorage.setItem("agentic-ide-layout", mode);
+  }
+
+  saveProjects() {
+    const paths = this.projects.map((p) => p.path);
+    localStorage.setItem("agentic-ide-projects", JSON.stringify(paths));
+  }
+
+  async loadProjects() {
+    const stored = localStorage.getItem("agentic-ide-projects");
+    if (stored) {
+      const paths: string[] = JSON.parse(stored);
+      for (const path of paths) {
+        await this.addProject(path);
+      }
+    }
+  }
+}
+
+export const appState = new AppState();
