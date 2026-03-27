@@ -200,7 +200,7 @@
           </div>
         </div>
 
-        {#if isExpanded(project.path) || true}
+        {#if isExpanded(project.path)}
           <div class="worktree-list">
             {#each project.worktrees as wt, i}
               <!-- svelte-ignore a11y_click_events_have_key_events -->

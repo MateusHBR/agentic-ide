@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -87,7 +86,7 @@
     await appState.loadProjects();
     syncTrayProfiles();
 
-    unlistenExit = await listen("terminal-exit", (event: any) => {
+    unlistenExit = await getCurrentWindow().listen("terminal-exit", (event: any) => {
       const { id } = event.payload;
       invoke("close_terminal", { id }).catch(() => {});
       appState.removeTerminal(id);
@@ -156,6 +155,13 @@
     };
     const onUp = () => {
       isResizingSidebar = false;
+      // Persist sidebar width to profile
+      if (appState.profileId) {
+        invoke("update_profile_settings", {
+          id: appState.profileId,
+          settings: { layout: appState.layout, sidebar_width: appState.sidebarWidth }
+        }).catch(console.error);
+      }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };

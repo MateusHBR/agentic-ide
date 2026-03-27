@@ -14,6 +14,7 @@
   let editingId = $state<string | null>(null);
   let editName = $state("");
   let editColor = $state("");
+  let confirmDeleteId = $state<string | null>(null);
 
   const presetColors = [
     "#58a6ff", "#3fb950", "#d29922", "#ff7b72",
@@ -34,9 +35,20 @@
     syncTrayProfiles();
   }
 
-  async function handleDelete(id: string) {
-    await profileState.deleteExistingProfile(id);
-    syncTrayProfiles();
+  function handleDelete(id: string) {
+    confirmDeleteId = id;
+  }
+
+  async function confirmDelete() {
+    if (confirmDeleteId) {
+      await profileState.deleteExistingProfile(confirmDeleteId);
+      confirmDeleteId = null;
+      syncTrayProfiles();
+    }
+  }
+
+  function cancelDelete() {
+    confirmDeleteId = null;
   }
 
   async function handleSetDefault(id: string) {
@@ -88,7 +100,9 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
-      if (editingId) {
+      if (confirmDeleteId) {
+        confirmDeleteId = null;
+      } else if (editingId) {
         editingId = null;
       } else {
         onClose();
@@ -119,7 +133,7 @@
           {#each profileState.profiles as profile (profile.id)}
             <div class="profile-item">
               <div class="profile-info">
-                <span class="profile-dot" style="background: {profile.color}"></span>
+                <span class="profile-dot" style="background: {editingId === profile.id ? editColor : profile.color}"></span>
                 {#if editingId === profile.id}
                   <div class="edit-form">
                     <input
@@ -157,32 +171,40 @@
                 {/if}
               </div>
               {#if editingId !== profile.id}
-                <div class="profile-actions">
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <span class="action-btn" onclick={() => startEdit(profile)} title="Edit">
-                    &#9998;
-                  </span>
-                  {#if !profile.is_default}
+                {#if confirmDeleteId === profile.id}
+                  <div class="confirm-delete">
+                    <span class="confirm-delete-label">Are you sure?</span>
+                    <button class="confirm-delete-btn delete" onclick={confirmDelete}>Delete</button>
+                    <button class="confirm-delete-btn cancel" onclick={cancelDelete}>Cancel</button>
+                  </div>
+                {:else}
+                  <div class="profile-actions">
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <span class="action-btn" onclick={() => handleSetDefault(profile.id)} title="Set as default">
-                      &#9733;
+                    <span class="action-btn" onclick={() => startEdit(profile)} title="Edit">
+                      &#9998;
                     </span>
-                  {/if}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <span class="action-btn" onclick={() => handleOpenInNewWindow(profile)} title="Open in new window">
-                    &#10697;
-                  </span>
-                  {#if !profile.is_default}
+                    {#if !profile.is_default}
+                      <!-- svelte-ignore a11y_click_events_have_key_events -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <span class="action-btn" onclick={() => handleSetDefault(profile.id)} title="Set as default">
+                        &#9733;
+                      </span>
+                    {/if}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <span class="action-btn danger" onclick={() => handleDelete(profile.id)} title="Delete">
-                      &#10005;
+                    <span class="action-btn" onclick={() => handleOpenInNewWindow(profile)} title="Open in new window">
+                      &#10697;
                     </span>
-                  {/if}
-                </div>
+                    {#if !profile.is_default}
+                      <!-- svelte-ignore a11y_click_events_have_key_events -->
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <span class="action-btn danger" onclick={() => handleDelete(profile.id)} title="Delete">
+                        &#10005;
+                      </span>
+                    {/if}
+                  </div>
+                {/if}
               {/if}
             </div>
           {/each}
@@ -384,6 +406,48 @@
   .action-btn.danger:hover {
     background: rgba(255, 123, 114, 0.15);
     color: #ff7b72;
+  }
+
+  .confirm-delete {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .confirm-delete-label {
+    font-size: 12px;
+    color: #8b949e;
+    white-space: nowrap;
+  }
+
+  .confirm-delete-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  .confirm-delete-btn.delete {
+    background: rgba(255, 123, 114, 0.15);
+    color: #ff7b72;
+  }
+
+  .confirm-delete-btn.delete:hover {
+    background: rgba(255, 123, 114, 0.3);
+  }
+
+  .confirm-delete-btn.cancel {
+    background: #3a3a3c;
+    color: #e6edf3;
+  }
+
+  .confirm-delete-btn.cancel:hover {
+    background: #48484a;
   }
 
   .edit-form {

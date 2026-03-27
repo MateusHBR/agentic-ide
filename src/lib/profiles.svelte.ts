@@ -78,7 +78,7 @@ class ProfileState {
   async createNewProfile(name: string, color: string): Promise<Profile | null> {
     try {
       const profile = await createProfile(name, color);
-      this.profiles.push(profile);
+      await this.loadProfiles();
       return profile;
     } catch (e) {
       console.error("Failed to create profile:", e);
@@ -90,6 +90,18 @@ class ProfileState {
     try {
       await deleteProfile(id);
       this.profiles = this.profiles.filter(p => p.id !== id);
+
+      // If the deleted profile was active, switch to the default profile
+      if (this.activeProfileId === id) {
+        const defaultProfile = this.profiles.find(p => p.is_default) ?? this.profiles[0];
+        if (defaultProfile) {
+          this.activeProfileId = defaultProfile.id;
+        }
+      }
+
+      // Clean up orphaned localStorage key for the deleted profile
+      localStorage.removeItem(`agentic-ide-projects-${id}`);
+
       return true;
     } catch (e) {
       console.error("Failed to delete profile:", e);

@@ -111,6 +111,13 @@ impl ProfileManager {
     }
 
     pub fn create(&mut self, name: &str, color: &str) -> Result<Profile, String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Profile name cannot be empty".to_string());
+        }
+        if !color.starts_with('#') || color.len() != 7 {
+            return Err("Invalid color format".to_string());
+        }
         let profile = Profile {
             id: Uuid::new_v4().to_string(),
             name: name.to_string(),
@@ -124,6 +131,13 @@ impl ProfileManager {
     }
 
     pub fn update(&mut self, id: &str, name: &str, color: &str) -> Result<Profile, String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Profile name cannot be empty".to_string());
+        }
+        if !color.starts_with('#') || color.len() != 7 {
+            return Err("Invalid color format".to_string());
+        }
         let profile = self
             .store
             .profiles

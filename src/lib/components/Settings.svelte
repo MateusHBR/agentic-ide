@@ -84,6 +84,7 @@
     { keys: "⌘ 1–9", description: "Switch to terminal by index (scoped to active worktree)" },
     { keys: "⌘ B", description: "Toggle sidebar" },
     { keys: "⌘ J", description: "Toggle right / bottom panel" },
+    { keys: "⌘ P", description: "Profiles" },
     { keys: "⌘ ,", description: "Open settings" },
     { keys: "Esc", description: "Close overlay / modal" },
   ];
