@@ -48,8 +48,15 @@
         title: "Select a Git project folder",
       });
       if (selected) {
-        await appState.addProject(selected);
-        expandedProjects = new Set([...expandedProjects, selected]);
+        const info = await appState.addProject(selected);
+        if (info) {
+          expandedProjects = new Set([...expandedProjects, info.path]);
+          // Auto-open a terminal for the main worktree
+          const mainWt = info.worktrees.find((w) => w.is_main) || info.worktrees[0];
+          if (mainWt) {
+            onNewTerminal(mainWt.path);
+          }
+        }
       }
     } catch (e) {
       console.error("Failed to add project:", e);

@@ -4,12 +4,14 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import type { UnlistenFn } from "@tauri-apps/api/event";
+  import { open } from "@tauri-apps/plugin-dialog";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import TerminalPanel from "$lib/components/TerminalPanel.svelte";
   import RightPanel from "$lib/components/RightPanel.svelte";
   import WorktreeSwitcher from "$lib/components/WorktreeSwitcher.svelte";
   import Settings from "$lib/components/Settings.svelte";
   import UpdateToast from "$lib/components/UpdateToast.svelte";
+  import Onboarding from "$lib/components/Onboarding.svelte";
   import { appState } from "$lib/state.svelte";
 
   let isResizingSidebar = $state(false);
@@ -96,6 +98,27 @@
       appState.selectWorktree(appState.activeProject, worktreePath);
     } catch (e) {
       console.error("Failed to create terminal:", e);
+    }
+  }
+
+  async function handleAddProject() {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select a Git project folder",
+      });
+      if (selected) {
+        const info = await appState.addProject(selected);
+        if (info && info.worktrees.length > 0) {
+          const mainWt = info.worktrees.find((w: any) => w.is_main) || info.worktrees[0];
+          if (mainWt) {
+            await handleNewTerminal(mainWt.path);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to add project:", e);
     }
   }
 
@@ -216,13 +239,14 @@
         <TerminalPanel terminalId={term.id} worktreePath={term.worktreePath} />
       </div>
     {/each}
+  {:else if appState.projects.length === 0}
+    <Onboarding onAddProject={handleAddProject} />
   {:else}
     <div class="empty-terminal">
       <div class="empty-content">
         <div class="empty-icon">⬡</div>
-        <h2>Agentic IDE</h2>
-        <p>Add a project and create a terminal to get started.</p>
-        <p class="hint">Use the sidebar to add a project, then click "New Terminal" on a worktree.</p>
+        <h2>No Terminal Open</h2>
+        <p>Click "New Terminal" on a worktree in the sidebar, or press <kbd>&#8984;N</kbd></p>
       </div>
     </div>
   {/if}
@@ -666,8 +690,14 @@
     margin-bottom: 4px;
   }
 
-  .hint {
-    font-size: 12px !important;
-    margin-top: 8px !important;
+  .empty-content kbd {
+    display: inline-flex;
+    padding: 2px 6px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    color: #8b949e;
   }
 </style>

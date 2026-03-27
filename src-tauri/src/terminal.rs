@@ -5,6 +5,38 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
+/// Splits a byte slice at the last valid UTF-8 boundary.
+/// Returns the valid UTF-8 string and any trailing incomplete bytes.
+fn extract_valid_utf8(bytes: &[u8]) -> (String, Vec<u8>) {
+    if bytes.is_empty() {
+        return (String::new(), Vec::new());
+    }
+
+    match std::str::from_utf8(bytes) {
+        Ok(s) => (s.to_string(), Vec::new()),
+        Err(e) => {
+            let valid_up_to = e.valid_up_to();
+            let valid_str = if valid_up_to > 0 {
+                // Safety: from_utf8 confirmed these bytes are valid UTF-8
+                unsafe { std::str::from_utf8_unchecked(&bytes[..valid_up_to]) }.to_string()
+            } else {
+                String::new()
+            };
+
+            match e.error_len() {
+                None => {
+                    // Incomplete multi-byte sequence at the end — buffer it
+                    (valid_str, bytes[valid_up_to..].to_vec())
+                }
+                Some(_) => {
+                    // Actual invalid bytes — use lossy conversion for entire input
+                    (String::from_utf8_lossy(bytes).to_string(), Vec::new())
+                }
+            }
+        }
+    }
+}
+
 struct TerminalInstance {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
@@ -64,9 +96,21 @@ impl TerminalManager {
         let term_id = id.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
+            let mut pending: Vec<u8> = Vec::new();
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
+                        // Flush any remaining pending bytes before exit
+                        if !pending.is_empty() {
+                            let data = String::from_utf8_lossy(&pending).to_string();
+                            let _ = app.emit(
+                                "terminal-output",
+                                serde_json::json!({
+                                    "id": term_id,
+                                    "data": data
+                                }),
+                            );
+                        }
                         let _ = app.emit(
                             "terminal-exit",
                             serde_json::json!({ "id": term_id }),
@@ -74,14 +118,19 @@ impl TerminalManager {
                         break;
                     }
                     Ok(n) => {
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = app.emit(
-                            "terminal-output",
-                            serde_json::json!({
-                                "id": term_id,
-                                "data": data
-                            }),
-                        );
+                        pending.extend_from_slice(&buf[..n]);
+                        let (data, remaining) = extract_valid_utf8(&pending);
+                        pending = remaining;
+
+                        if !data.is_empty() {
+                            let _ = app.emit(
+                                "terminal-output",
+                                serde_json::json!({
+                                    "id": term_id,
+                                    "data": data
+                                }),
+                            );
+                        }
                     }
                     Err(_) => break,
                 }

@@ -57,7 +57,7 @@ class AppState {
   private _pollActive = false;
   private _lastTerminalPerWorktree = new Map<string, string>();
 
-  async addProject(path: string) {
+  async addProject(path: string): Promise<ProjectInfo | null> {
     try {
       const info: ProjectInfo = await invoke("get_project_info", {
         projectPath: path,
@@ -65,16 +65,17 @@ class AppState {
       const exists = this.projects.some((p) => p.path === info.path);
       if (!exists) {
         this.projects.push(info);
-        if (!this.activeProject) {
-          this.activeProject = info.path;
-          if (info.worktrees.length > 0) {
-            this.activeWorktree = info.worktrees[0].path;
-          }
-        }
         this.saveProjects();
       }
+      // Always switch to the newly added project
+      this.activeProject = info.path;
+      if (info.worktrees.length > 0) {
+        this.activeWorktree = info.worktrees[0].path;
+      }
+      return info;
     } catch (e) {
       console.error("Failed to add project:", e);
+      return null;
     }
   }
 
