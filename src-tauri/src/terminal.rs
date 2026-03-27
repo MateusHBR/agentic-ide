@@ -5,9 +5,11 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
+#[allow(dead_code)]
 struct TerminalInstance {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
+    window_label: Option<String>,
 }
 
 pub struct TerminalManager {
@@ -25,6 +27,7 @@ impl TerminalManager {
         &mut self,
         cwd: &str,
         cmd: Option<&str>,
+        window_label: Option<&str>,
         app: AppHandle,
     ) -> Result<String, String> {
         let id = Uuid::new_v4().to_string();
@@ -62,26 +65,31 @@ impl TerminalManager {
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
         let term_id = id.clone();
+        let emit_label = window_label.map(|s| s.to_string());
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        let _ = app.emit(
-                            "terminal-exit",
-                            serde_json::json!({ "id": term_id }),
-                        );
+                        let payload = serde_json::json!({ "id": term_id });
+                        if let Some(ref label) = emit_label {
+                            let _ = app.emit_to(label, "terminal-exit", payload);
+                        } else {
+                            let _ = app.emit("terminal-exit", payload);
+                        }
                         break;
                     }
                     Ok(n) => {
                         let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = app.emit(
-                            "terminal-output",
-                            serde_json::json!({
-                                "id": term_id,
-                                "data": data
-                            }),
-                        );
+                        let payload = serde_json::json!({
+                            "id": term_id,
+                            "data": data
+                        });
+                        if let Some(ref label) = emit_label {
+                            let _ = app.emit_to(label, "terminal-output", payload);
+                        } else {
+                            let _ = app.emit("terminal-output", payload);
+                        }
                     }
                     Err(_) => break,
                 }
@@ -93,6 +101,7 @@ impl TerminalManager {
             TerminalInstance {
                 writer,
                 master: pair.master,
+                window_label: window_label.map(|s| s.to_string()),
             },
         );
 

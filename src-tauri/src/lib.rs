@@ -4,7 +4,7 @@ mod worktree;
 
 use std::sync::Mutex;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, State, WindowEvent,
 };
@@ -21,11 +21,12 @@ struct TrayState {
 fn create_terminal(
     cwd: String,
     cmd: Option<String>,
+    window_label: Option<String>,
     state: State<'_, terminal::TerminalState>,
     app: tauri::AppHandle,
 ) -> Result<String, String> {
     let mut manager = state.lock().map_err(|e| e.to_string())?;
-    manager.create(&cwd, cmd.as_deref(), app)
+    manager.create(&cwd, cmd.as_deref(), window_label.as_deref(), app)
 }
 
 #[tauri::command]
@@ -153,7 +154,7 @@ fn get_profile(id: String, state: State<'_, profiles::ProfileState>) -> Result<p
 #[tauri::command]
 fn get_default_profile(state: State<'_, profiles::ProfileState>) -> Result<profiles::Profile, String> {
     let mgr = state.lock().map_err(|e| e.to_string())?;
-    Ok(mgr.get_default())
+    mgr.get_default()
 }
 
 #[tauri::command]
@@ -203,7 +204,7 @@ async fn open_profile_window(
         return Ok(());
     }
 
-    let url = format!("index.html?profile={}", profile_id);
+    let url = format!("/?profile={}", profile_id);
 
     WebviewWindowBuilder::new(
         &app,
@@ -230,15 +231,15 @@ fn sync_tray_profiles(app: tauri::AppHandle) -> Result<(), String> {
         mgr.list()
     };
 
-    let mut items: Vec<MenuItem<tauri::Wry>> = Vec::new();
+    let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
 
     let open_item = MenuItem::with_id(&app, "open", "Open Agentic IDE", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    items.push(open_item);
+    items.push(Box::new(open_item));
 
-    let sep = MenuItem::with_id(&app, "sep", "──────────", false, None::<&str>)
+    let sep = PredefinedMenuItem::separator(&app)
         .map_err(|e| e.to_string())?;
-    items.push(sep);
+    items.push(Box::new(sep));
 
     let mut profile_entries = Vec::new();
     for profile in &profiles {
@@ -250,21 +251,21 @@ fn sync_tray_profiles(app: tauri::AppHandle) -> Result<(), String> {
         };
         let item = MenuItem::with_id(&app, &id, &label, true, None::<&str>)
             .map_err(|e| e.to_string())?;
-        items.push(item);
+        items.push(Box::new(item));
         profile_entries.push((profile.id.clone(), profile.name.clone()));
     }
 
-    let sep2 = MenuItem::with_id(&app, "sep2", "──────────", false, None::<&str>)
+    let sep2 = PredefinedMenuItem::separator(&app)
         .map_err(|e| e.to_string())?;
-    items.push(sep2);
+    items.push(Box::new(sep2));
 
     let quit_item = MenuItem::with_id(&app, "quit", "Quit", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    items.push(quit_item);
+    items.push(Box::new(quit_item));
 
     let item_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = items
         .iter()
-        .map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
+        .map(|i| i.as_ref())
         .collect();
     let menu = Menu::with_items(&app, &item_refs).map_err(|e| e.to_string())?;
 
@@ -328,10 +329,43 @@ pub fn run() {
             let profile_manager = profiles::ProfileManager::load(app_data_dir);
             app.manage(Mutex::new(profile_manager) as profiles::ProfileState);
 
-            // Build tray menu
+            // Build tray menu with profiles
+            let profiles_list = {
+                let mgr = app.state::<Mutex<profiles::ProfileManager>>();
+                mgr.lock().map(|m| m.list()).unwrap_or_default()
+            };
+
+            let mut tray_items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = Vec::new();
             let open_item = MenuItem::with_id(app, "open", "Open Agentic IDE", true, None::<&str>)?;
+            tray_items.push(Box::new(open_item));
+
+            let sep = PredefinedMenuItem::separator(app)?;
+            tray_items.push(Box::new(sep));
+
+            let mut initial_profile_entries = Vec::new();
+            for profile in &profiles_list {
+                let id = format!("profile_{}", profile.id);
+                let label = if profile.is_default {
+                    format!("{} (Default)", profile.name)
+                } else {
+                    profile.name.clone()
+                };
+                let item = MenuItem::with_id(app, &id, &label, true, None::<&str>)?;
+                tray_items.push(Box::new(item));
+                initial_profile_entries.push((profile.id.clone(), profile.name.clone()));
+            }
+
+            let sep2 = PredefinedMenuItem::separator(app)?;
+            tray_items.push(Box::new(sep2));
+
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+            tray_items.push(Box::new(quit_item));
+
+            let item_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = tray_items
+                .iter()
+                .map(|i| i.as_ref())
+                .collect();
+            let menu = Menu::with_items(app, &item_refs)?;
 
             // Create tray icon (monochrome template for macOS)
             let tray_icon_bytes = include_bytes!("../icons/tray.png");
@@ -397,9 +431,10 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Store tray handle for dynamic menu updates
+            // Store tray handle and initial profiles for dynamic menu updates
             if let Ok(mut tray_state) = app.state::<Mutex<TrayState>>().lock() {
                 tray_state.icon = Some(tray);
+                tray_state.profile_paths = initial_profile_entries;
             }
 
             Ok(())

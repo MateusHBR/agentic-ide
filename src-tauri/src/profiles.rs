@@ -59,13 +59,15 @@ impl ProfileManager {
         };
 
         if manager.store.profiles.is_empty() {
-            manager.create_default();
+            if let Err(e) = manager.create_default() {
+                eprintln!("Warning: failed to persist default profile: {}", e);
+            }
         }
 
         manager
     }
 
-    fn create_default(&mut self) {
+    fn create_default(&mut self) -> Result<(), String> {
         let profile = Profile {
             id: Uuid::new_v4().to_string(),
             name: "Default".to_string(),
@@ -74,13 +76,15 @@ impl ProfileManager {
             settings: ProfileSettings::default(),
         };
         self.store.profiles.push(profile);
-        self.save();
+        self.save()
     }
 
-    fn save(&self) {
-        if let Ok(json) = serde_json::to_string_pretty(&self.store) {
-            let _ = fs::write(&self.storage_path, json);
-        }
+    fn save(&self) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(&self.store)
+            .map_err(|e| format!("Failed to serialize profiles: {}", e))?;
+        fs::write(&self.storage_path, json)
+            .map_err(|e| format!("Failed to write profiles to disk: {}", e))?;
+        Ok(())
     }
 
     pub fn list(&self) -> Vec<Profile> {
@@ -96,13 +100,14 @@ impl ProfileManager {
             .ok_or_else(|| format!("Profile not found: {}", id))
     }
 
-    pub fn get_default(&self) -> Profile {
+    pub fn get_default(&self) -> Result<Profile, String> {
         self.store
             .profiles
             .iter()
             .find(|p| p.is_default)
+            .or_else(|| self.store.profiles.first())
             .cloned()
-            .unwrap_or_else(|| self.store.profiles[0].clone())
+            .ok_or_else(|| "No profiles available".to_string())
     }
 
     pub fn create(&mut self, name: &str, color: &str) -> Result<Profile, String> {
@@ -114,7 +119,7 @@ impl ProfileManager {
             settings: ProfileSettings::default(),
         };
         self.store.profiles.push(profile.clone());
-        self.save();
+        self.save()?;
         Ok(profile)
     }
 
@@ -128,7 +133,7 @@ impl ProfileManager {
         profile.name = name.to_string();
         profile.color = color.to_string();
         let updated = profile.clone();
-        self.save();
+        self.save()?;
         Ok(updated)
     }
 
@@ -140,7 +145,7 @@ impl ProfileManager {
             .find(|p| p.id == id)
             .ok_or_else(|| format!("Profile not found: {}", id))?;
         profile.settings = settings;
-        self.save();
+        self.save()?;
         Ok(())
     }
 
@@ -151,7 +156,7 @@ impl ProfileManager {
         for p in &mut self.store.profiles {
             p.is_default = p.id == id;
         }
-        self.save();
+        self.save()?;
         Ok(())
     }
 
@@ -168,7 +173,7 @@ impl ProfileManager {
         }
 
         self.store.profiles.retain(|p| p.id != id);
-        self.save();
+        self.save()?;
         Ok(())
     }
 }
@@ -233,7 +238,7 @@ mod tests {
     #[test]
     fn test_cannot_delete_default_profile() {
         let (_dir, mut manager) = setup();
-        let default_id = manager.get_default().id;
+        let default_id = manager.get_default().unwrap().id;
         let result = manager.delete(&default_id);
         assert!(result.is_err());
         assert_eq!(

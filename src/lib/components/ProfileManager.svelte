@@ -20,6 +20,10 @@
     "#bc8cff", "#39c5cf", "#f778ba", "#ffa657",
   ];
 
+  function syncTrayProfiles() {
+    invoke("sync_tray_profiles").catch(console.error);
+  }
+
   async function handleCreate() {
     if (!newProfileName.trim()) return;
     isCreating = true;
@@ -27,14 +31,17 @@
     newProfileName = "";
     newProfileColor = "#58a6ff";
     isCreating = false;
+    syncTrayProfiles();
   }
 
   async function handleDelete(id: string) {
     await profileState.deleteExistingProfile(id);
+    syncTrayProfiles();
   }
 
   async function handleSetDefault(id: string) {
     await profileState.setDefault(id);
+    syncTrayProfiles();
   }
 
   async function handleOpenInNewWindow(profile: Profile) {
@@ -70,6 +77,7 @@
           color: editColor,
         });
         await profileState.loadProfiles();
+        syncTrayProfiles();
       } catch (e) {
         console.error("Failed to update profile:", e);
       }

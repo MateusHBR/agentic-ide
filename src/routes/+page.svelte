@@ -99,6 +99,10 @@
 
   onDestroy(() => {
     unlistenExit?.();
+    // Close all terminals owned by this window
+    for (const term of appState.terminals) {
+      invoke("close_terminal", { id: term.id }).catch(() => {});
+    }
     window.removeEventListener("keydown", handleKeydown, true);
     appState.stopPolling();
   });
@@ -108,6 +112,7 @@
       const terminalId: string = await invoke("create_terminal", {
         cwd: worktreePath,
         cmd: null,
+        windowLabel: getCurrentWindow().label,
       });
 
       const worktreeTerminals = appState.getTerminalsForWorktree(worktreePath);
