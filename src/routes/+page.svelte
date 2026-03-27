@@ -558,12 +558,13 @@
 
   .terminal-tab {
     display: none;
-    height: 100%;
+    min-height: 0;
   }
 
   .terminal-tab.visible {
     display: flex;
     flex: 1;
+    overflow: hidden;
   }
 
   .terminal-tabs-bar {

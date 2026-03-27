@@ -42,11 +42,14 @@ impl TerminalManager {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
         let mut command = if let Some(cmd_str) = cmd {
             let mut c = CommandBuilder::new(&shell);
+            c.arg("-l");
             c.arg("-c");
             c.arg(cmd_str);
             c
         } else {
-            CommandBuilder::new(&shell)
+            let mut c = CommandBuilder::new(&shell);
+            c.arg("-l");
+            c
         };
         command.cwd(cwd);
         command.env("TERM", "xterm-256color");
