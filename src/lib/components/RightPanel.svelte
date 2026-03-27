@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { appState } from "$lib/state.svelte";
   import type { RightTab } from "$lib/state.svelte";
+  import hljs from "highlight.js";
 
   interface Props {
     onClose?: () => void;
@@ -218,6 +219,36 @@
       }
     }
     return files;
+  }
+
+  const extToLang: Record<string, string> = {
+    ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
+    rs: "rust", py: "python", rb: "ruby", go: "go", java: "java",
+    kt: "kotlin", swift: "swift", c: "c", cpp: "cpp", h: "c", hpp: "cpp",
+    cs: "csharp", dart: "dart", php: "php", sh: "bash", zsh: "bash",
+    bash: "bash", yml: "yaml", yaml: "yaml", json: "json", toml: "ini",
+    xml: "xml", html: "xml", svelte: "xml", vue: "xml", css: "css",
+    scss: "scss", less: "less", sql: "sql", md: "markdown", lua: "lua",
+    r: "r", scala: "scala", zig: "zig", ex: "elixir", exs: "elixir",
+    erl: "erlang", hs: "haskell", ml: "ocaml", clj: "clojure",
+    dockerfile: "dockerfile", makefile: "makefile", tf: "hcl",
+  };
+
+  function getLang(filename: string): string | undefined {
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    return extToLang[ext];
+  }
+
+  function highlightLine(content: string, filename: string): string {
+    const lang = getLang(filename);
+    try {
+      if (lang) {
+        return hljs.highlight(content, { language: lang, ignoreIllegals: true }).value;
+      }
+      return hljs.highlightAuto(content).value;
+    } catch {
+      return content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
   }
 
   // --- Expand context ---
@@ -515,7 +546,7 @@
                             <span class="diff-marker">
                               {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
                             </span>
-                            <span class="diff-content">{line.content.slice(1)}</span>
+                            <span class="diff-content">{@html highlightLine(line.content.slice(1), file.file)}</span>
                           </div>
                         {/each}
                         {#if !isFullyExpanded(file.file, false) && hunkIdx === file.hunks.length - 1}
@@ -636,7 +667,7 @@
                             <span class="diff-marker">
                               {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
                             </span>
-                            <span class="diff-content">{line.content.slice(1)}</span>
+                            <span class="diff-content">{@html highlightLine(line.content.slice(1), file.file)}</span>
                           </div>
                         {/each}
                         {#if !isFullyExpanded(file.file, true) && hunkIdx === file.hunks.length - 1}
@@ -1273,6 +1304,11 @@
   .diff-content {
     flex: 1;
     min-width: 0;
+  }
+
+  .diff-content :global(.hljs) {
+    background: transparent;
+    padding: 0;
   }
 
   .image-preview {
