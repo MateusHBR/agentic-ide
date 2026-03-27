@@ -8,7 +8,9 @@ Agentic IDE gives you a single window to manage all your git worktrees. Each wor
 
 ## Screenshot
 
-Three-panel layout: sidebar with projects and worktrees, center terminal, right panel with diffs and timeline.
+![Agentic IDE](static/screenshot.png)
+
+Three-panel layout: sidebar with projects and worktrees, center terminal running Claude Code, right panel with live diffs and changes.
 
 ## Features
 
