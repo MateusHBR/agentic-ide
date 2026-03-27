@@ -93,10 +93,36 @@ class AppState {
   }
 
   removeProject(path: string) {
-    this.projects = this.projects.filter((p) => p.path !== path);
-    if (this.activeProject === path) {
-      this.activeProject = this.projects[0]?.path ?? "";
+    // Close all terminals belonging to this project
+    const project = this.projects.find((p) => p.path === path);
+    if (project) {
+      const wtPaths = new Set(project.worktrees.map((w) => w.path));
+      const toRemove = this.terminals.filter((t) => wtPaths.has(t.worktreePath));
+      for (const term of toRemove) {
+        invoke("close_terminal", { id: term.id }).catch(() => {});
+        this._lastTerminalPerWorktree.delete(term.worktreePath);
+      }
+      this.terminals = this.terminals.filter((t) => !wtPaths.has(t.worktreePath));
     }
+
+    this.projects = this.projects.filter((p) => p.path !== path);
+
+    if (this.activeProject === path) {
+      const next = this.projects[0];
+      if (next) {
+        this.activeProject = next.path;
+        this.activeWorktree = next.worktrees[0]?.path ?? "";
+        this.activeTerminalId = this.activeWorktree
+          ? (this.getTerminalsForWorktree(this.activeWorktree)[0]?.id ?? "")
+          : "";
+      } else {
+        this.activeProject = "";
+        this.activeWorktree = "";
+        this.activeTerminalId = "";
+      }
+      this.refreshRightPanel();
+    }
+
     this.saveProjects();
   }
 
