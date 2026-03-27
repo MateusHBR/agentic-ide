@@ -1,6 +1,6 @@
 [package]
 name = "agentic-ide"
-version = "0.2.1"
+version = "0.2.2"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -27,4 +27,5 @@ portable-pty = "0.8"
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 

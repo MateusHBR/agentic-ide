@@ -9,6 +9,7 @@
   import RightPanel from "$lib/components/RightPanel.svelte";
   import WorktreeSwitcher from "$lib/components/WorktreeSwitcher.svelte";
   import Settings from "$lib/components/Settings.svelte";
+  import UpdateToast from "$lib/components/UpdateToast.svelte";
   import { appState } from "$lib/state.svelte";
 
   let isResizingSidebar = $state(false);
@@ -187,6 +188,8 @@
     window.addEventListener("mouseup", onUp);
   }
 </script>
+
+<UpdateToast />
 
 {#if showWorktreeSwitcher}
   <WorktreeSwitcher onClose={() => (showWorktreeSwitcher = false)} />
