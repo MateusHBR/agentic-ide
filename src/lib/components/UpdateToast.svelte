@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from "svelte";
   import { check, type Update } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
+  import { listen } from "@tauri-apps/api/event";
+  import type { UnlistenFn } from "@tauri-apps/api/event";
 
   type Status = "hidden" | "available" | "downloading" | "ready" | "error";
 
@@ -11,10 +13,14 @@
   let dismissed = $state(false);
   let update = $state<Update | null>(null);
   let checkInterval: ReturnType<typeof setInterval> | null = null;
+  let unlistenTray: UnlistenFn | null = null;
 
   const CHECK_INTERVAL = 30 * 60 * 1000; // 30 minutes
+  let checking = false;
 
   async function checkForUpdate() {
+    if (checking) return;
+    checking = true;
     try {
       const result = await check();
       if (result) {
@@ -25,6 +31,8 @@
       }
     } catch (_) {
       // Silently ignore — background check
+    } finally {
+      checking = false;
     }
   }
 
@@ -48,15 +56,20 @@
     dismissed = true;
   }
 
-  onMount(() => {
+  onMount(async () => {
     // Check on startup after a short delay
     setTimeout(checkForUpdate, 3000);
     // Check every 30 minutes
     checkInterval = setInterval(checkForUpdate, CHECK_INTERVAL);
+    // Check when app is opened from system tray
+    unlistenTray = await listen("check-for-updates", () => {
+      checkForUpdate();
+    });
   });
 
   onDestroy(() => {
     if (checkInterval) clearInterval(checkInterval);
+    unlistenTray?.();
   });
 
   let visible = $derived(status !== "hidden" && !dismissed);
@@ -79,10 +92,12 @@
       <button class="toast-btn primary" onclick={downloadAndInstall}>Update</button>
 
     {:else if status === "downloading"}
-      <div class="toast-icon"><span class="spin">↻</span></div>
+      <div class="toast-icon">↓</div>
       <div class="toast-body">
-        <span class="toast-title">Downloading...</span>
-        <span class="toast-version">Installing v{version}</span>
+        <span class="toast-title">Downloading v{version}...</span>
+        <div class="toast-progress">
+          <div class="toast-progress-fill"></div>
+        </div>
       </div>
 
     {:else if status === "ready"}
@@ -173,9 +188,26 @@
     color: #58a6ff;
   }
 
-  .spin {
-    display: inline-block;
-    animation: spin 1s linear infinite;
+  .toast-progress {
+    width: 100%;
+    height: 4px;
+    background: #21262d;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+
+  .toast-progress-fill {
+    height: 100%;
+    background: #58a6ff;
+    border-radius: 2px;
+    animation: progress-indeterminate 1.5s ease-in-out infinite;
+  }
+
+  @keyframes progress-indeterminate {
+    0% { width: 0%; margin-left: 0; }
+    50% { width: 60%; margin-left: 20%; }
+    100% { width: 0%; margin-left: 100%; }
   }
 
   .toast-icon.done {
@@ -188,10 +220,6 @@
     color: #ff7b72;
   }
 
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
 
   .toast-body {
     flex: 1;
