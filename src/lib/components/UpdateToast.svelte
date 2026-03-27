@@ -79,7 +79,7 @@
       <button class="toast-btn primary" onclick={downloadAndInstall}>Update</button>
 
     {:else if status === "downloading"}
-      <div class="toast-icon spin">↻</div>
+      <div class="toast-icon"><span class="spin">↻</span></div>
       <div class="toast-body">
         <span class="toast-title">Downloading...</span>
         <span class="toast-version">Installing v{version}</span>
@@ -173,7 +173,8 @@
     color: #58a6ff;
   }
 
-  .toast-icon.spin {
+  .spin {
+    display: inline-block;
     animation: spin 1s linear infinite;
   }
 

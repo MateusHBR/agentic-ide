@@ -139,6 +139,95 @@ cd src-tauri && cargo check
 | `vite.config.js` | Port 1420, HMR, ignores src-tauri/ from watch |
 | `tsconfig.json` | Strict mode, bundler module resolution |
 
+## Releasing a New Version
+
+### Step-by-step process
+
+1. **Bump version** in all 4 files:
+   - `src-tauri/tauri.conf.json` → `"version": "X.Y.Z"`
+   - `src-tauri/Cargo.toml` → `version = "X.Y.Z"`
+   - `package.json` → `"version": "X.Y.Z"`
+   - `src/lib/components/Settings.svelte` → the about value string
+
+2. **Commit and push**:
+   ```bash
+   git add -A && git commit -m "Bump version to X.Y.Z" && git push origin main
+   ```
+
+3. **Build with signing** (generates DMG + updater artifacts):
+   ```bash
+   rm -rf src-tauri/target/release/bundle/
+   TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/agentic-ide.key)" \
+   TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+   pnpm tauri build
+   ```
+   This produces:
+   - `src-tauri/target/release/bundle/dmg/Agentic IDE_X.Y.Z_aarch64.dmg` — installer
+   - `src-tauri/target/release/bundle/macos/Agentic IDE.app.tar.gz` — updater artifact
+   - `src-tauri/target/release/bundle/macos/Agentic IDE.app.tar.gz.sig` — updater signature
+
+4. **Generate `latest.json`** for the auto-updater:
+   ```bash
+   BUNDLE="src-tauri/target/release/bundle"
+   SIG=$(cat "$BUNDLE/macos/Agentic IDE.app.tar.gz.sig")
+   DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+   cat > /tmp/latest.json << EOF
+   {
+     "version": "X.Y.Z",
+     "notes": "Release notes here",
+     "pub_date": "$DATE",
+     "platforms": {
+       "darwin-aarch64": {
+         "signature": "$SIG",
+         "url": "https://github.com/MateusHBR/agentic-ide/releases/download/vX.Y.Z/Agentic.IDE.app.tar.gz"
+       }
+     }
+   }
+   EOF
+   ```
+
+5. **Tag and push**:
+   ```bash
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+
+6. **Create GitHub Release** with all 4 artifacts:
+   ```bash
+   BUNDLE="src-tauri/target/release/bundle"
+   gh release create vX.Y.Z \
+     "$BUNDLE/dmg/Agentic IDE_X.Y.Z_aarch64.dmg" \
+     "$BUNDLE/macos/Agentic IDE.app.tar.gz#Agentic.IDE.app.tar.gz" \
+     "$BUNDLE/macos/Agentic IDE.app.tar.gz.sig#Agentic.IDE.app.tar.gz.sig" \
+     "/tmp/latest.json" \
+     --title "Agentic IDE vX.Y.Z" \
+     --notes "Release notes here"
+   ```
+
+### How the auto-updater works
+
+- The app checks `https://github.com/MateusHBR/agentic-ide/releases/latest/download/latest.json` on startup (3s delay) and every 30 minutes.
+- `latest.json` contains the version, signature, and download URL for each platform.
+- If a newer version is found, a floating toast appears in the bottom-right corner.
+- The user can download, install, and restart from the toast.
+- Updates are signed with a minisign keypair. The **public key** is in `tauri.conf.json` under `plugins.updater.pubkey`. The **private key** is at `~/.tauri/agentic-ide.key` (never commit this).
+- The `tauri-plugin-process` plugin provides the `relaunch()` function for the restart button.
+
+### Signing key location
+
+- **Private key**: `~/.tauri/agentic-ide.key` — used to sign builds, set via `TAURI_SIGNING_PRIVATE_KEY` env var
+- **Public key**: `~/.tauri/agentic-ide.key.pub` — embedded in `tauri.conf.json`
+- **Password**: empty (no password)
+
+### CI (GitHub Actions)
+
+`.github/workflows/release.yml` triggers on tag push (`v*`). It builds for macOS aarch64 + x86_64 using `tauri-apps/tauri-action`. Requires `TAURI_SIGNING_PRIVATE_KEY` as a GitHub Actions secret.
+
+### Important notes
+
+- Always `rm -rf src-tauri/target/release/bundle/` before building — stale DMG files cause the bundler to fail.
+- The `latest.json` URL in the release must use dots instead of spaces: `Agentic.IDE.app.tar.gz` (GitHub replaces spaces with dots in asset download URLs).
+- The `createUpdaterArtifacts: true` flag in `tauri.conf.json` tells the bundler to produce `.tar.gz` + `.sig` files alongside the DMG.
+
 ## Gotchas
 
 - `portable-pty` reader thread runs on a spawned OS thread, not tokio. Terminal output events are emitted from this thread.

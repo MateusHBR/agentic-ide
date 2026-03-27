@@ -230,7 +230,7 @@
         </div>
         <div class="about-row">
           <span class="about-label">Version</span>
-          <span class="about-value">0.2.3</span>
+          <span class="about-value">0.2.4</span>
         </div>
       </div>
     </div>
