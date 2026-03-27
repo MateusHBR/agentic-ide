@@ -88,7 +88,44 @@ pub fn get_diff(worktree_path: &str) -> Result<String, String> {
         .output()
         .map_err(|e| format!("Failed to run git diff: {}", e))?;
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let mut result = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Also include untracked files
+    let status_output = Command::new("git")
+        .args(["status", "--porcelain=v1"])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run git status: {}", e))?;
+
+    let status_str = String::from_utf8_lossy(&status_output.stdout);
+    for line in status_str.lines() {
+        if line.starts_with("??") {
+            let file = line[3..].trim();
+            // Skip binary/image files
+            let ext = file.rsplit('.').next().unwrap_or("").to_lowercase();
+            if ["png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "icns", "tiff", "tif", "avif",
+                "zip", "tar", "gz", "dmg", "exe", "bin", "dll", "so", "dylib", "pdf"]
+                .contains(&ext.as_str()) {
+                continue;
+            }
+            let diff_output = Command::new("git")
+                .args(["diff", "--no-index", "--", "/dev/null", file])
+                .current_dir(worktree_path)
+                .output();
+            if let Ok(out) = diff_output {
+                let diff_text = String::from_utf8_lossy(&out.stdout);
+                if !diff_text.is_empty() {
+                    // Rewrite the header to look like a normal git diff
+                    let rewritten = diff_text
+                        .replace(&format!("a/dev/null"), &format!("a/{}", file))
+                        .replace(&format!("b/{}", file), &format!("b/{}", file));
+                    result.push_str(&rewritten);
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 pub fn get_staged_diff(worktree_path: &str) -> Result<String, String> {
@@ -121,7 +158,20 @@ pub fn get_file_diff(
         .output()
         .map_err(|e| format!("Failed to run git diff: {}", e))?;
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let result = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // If no diff output, the file might be untracked
+    if result.is_empty() && !staged {
+        let out = Command::new("git")
+            .args(["diff", "--no-index", &context_arg, "--", "/dev/null", file])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| format!("Failed to diff untracked file: {}", e))?;
+        let diff_text = String::from_utf8_lossy(&out.stdout).to_string();
+        return Ok(diff_text.replace("a/dev/null", &format!("a/{}", file)));
+    }
+
+    Ok(result)
 }
 
 pub fn get_log(worktree_path: &str, count: u32) -> Result<Vec<LogEntry>, String> {
