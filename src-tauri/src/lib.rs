@@ -5,10 +5,15 @@ mod worktree;
 use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
+
+struct TrayState {
+    icon: Option<TrayIcon>,
+    profile_paths: Vec<(String, String)>, // (id, name)
+}
 
 // --- Terminal Commands ---
 
@@ -217,6 +222,62 @@ async fn open_profile_window(
     Ok(())
 }
 
+#[tauri::command]
+fn sync_tray_profiles(app: tauri::AppHandle) -> Result<(), String> {
+    let profiles = {
+        let mgr = app.state::<profiles::ProfileState>();
+        let mgr = mgr.lock().map_err(|e| e.to_string())?;
+        mgr.list()
+    };
+
+    let mut items: Vec<MenuItem<tauri::Wry>> = Vec::new();
+
+    let open_item = MenuItem::with_id(&app, "open", "Open Agentic IDE", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    items.push(open_item);
+
+    let sep = MenuItem::with_id(&app, "sep", "──────────", false, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    items.push(sep);
+
+    let mut profile_entries = Vec::new();
+    for profile in &profiles {
+        let id = format!("profile_{}", profile.id);
+        let label = if profile.is_default {
+            format!("{} (Default)", profile.name)
+        } else {
+            profile.name.clone()
+        };
+        let item = MenuItem::with_id(&app, &id, &label, true, None::<&str>)
+            .map_err(|e| e.to_string())?;
+        items.push(item);
+        profile_entries.push((profile.id.clone(), profile.name.clone()));
+    }
+
+    let sep2 = MenuItem::with_id(&app, "sep2", "──────────", false, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    items.push(sep2);
+
+    let quit_item = MenuItem::with_id(&app, "quit", "Quit", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    items.push(quit_item);
+
+    let item_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = items
+        .iter()
+        .map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
+        .collect();
+    let menu = Menu::with_items(&app, &item_refs).map_err(|e| e.to_string())?;
+
+    let tray_state = app.state::<Mutex<TrayState>>();
+    let mut state = tray_state.lock().map_err(|e| e.to_string())?;
+    if let Some(ref tray) = state.icon {
+        tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    }
+    state.profile_paths = profile_entries;
+
+    Ok(())
+}
+
 // --- App Setup ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -231,6 +292,7 @@ pub fn run() {
             None,
         ))
         .manage(Mutex::new(terminal::TerminalManager::new()) as terminal::TerminalState)
+        .manage(Mutex::new(TrayState { icon: None, profile_paths: Vec::new() }))
         .invoke_handler(tauri::generate_handler![
             create_terminal,
             write_terminal,
@@ -258,6 +320,7 @@ pub fn run() {
             delete_profile,
             set_default_profile,
             open_profile_window,
+            sync_tray_profiles,
         ])
         .setup(|app| {
             // Initialize profile manager
@@ -274,28 +337,48 @@ pub fn run() {
             let tray_icon_bytes = include_bytes!("../icons/tray.png");
             let tray_image = tauri::image::Image::from_bytes(tray_icon_bytes)?.to_owned();
 
-            TrayIconBuilder::new()
+            let tray = TrayIconBuilder::new()
                 .icon(tray_image)
                 .icon_as_template(true)
                 .tooltip("Agentic IDE")
                 .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "open" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
+                .on_menu_event(|app, event| {
+                    let event_id = event.id.as_ref().to_string();
+                    match event_id.as_str() {
+                        "open" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                            let app_handle = app.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_secs(2));
+                                let _ = app_handle.emit("check-for-updates", ());
+                            });
                         }
-                        let app_handle = app.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_secs(2));
-                            let _ = app_handle.emit("check-for-updates", ());
-                        });
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        id if id.starts_with("profile_") => {
+                            let profile_id = id.strip_prefix("profile_").unwrap_or("").to_string();
+                            // Look up profile name from tray state
+                            let profile_name = {
+                                let tray_state = app.state::<Mutex<TrayState>>();
+                                tray_state.lock().ok()
+                                    .and_then(|g| g.profile_paths.iter()
+                                        .find(|(pid, _)| *pid == profile_id)
+                                        .map(|(_, name)| name.clone()))
+                                    .unwrap_or_else(|| "Profile".to_string())
+                            };
+                            // Open profile in new window
+                            let app_clone = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = open_profile_window(profile_id, profile_name, app_clone).await;
+                            });
+                        }
+                        _ => {}
                     }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -313,6 +396,11 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // Store tray handle for dynamic menu updates
+            if let Ok(mut tray_state) = app.state::<Mutex<TrayState>>().lock() {
+                tray_state.icon = Some(tray);
+            }
 
             Ok(())
         })

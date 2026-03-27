@@ -48,10 +48,17 @@
     }
   }
 
+  let editInputEl = $state<HTMLInputElement | null>(null);
+
   function startEdit(profile: Profile) {
     editingId = profile.id;
     editName = profile.name;
     editColor = profile.color;
+    requestAnimationFrame(() => editInputEl?.focus());
+  }
+
+  function cancelEdit() {
+    editingId = null;
   }
 
   async function commitEdit() {
@@ -106,27 +113,33 @@
               <div class="profile-info">
                 <span class="profile-dot" style="background: {profile.color}"></span>
                 {#if editingId === profile.id}
-                  <input
-                    class="edit-input"
-                    type="text"
-                    bind:value={editName}
-                    onblur={commitEdit}
-                    onkeydown={(e) => {
-                      if (e.key === "Enter") commitEdit();
-                      if (e.key === "Escape") { editingId = null; }
-                    }}
-                  />
-                  <div class="edit-colors">
-                    {#each presetColors as c}
-                      <!-- svelte-ignore a11y_click_events_have_key_events -->
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <span
-                        class="color-swatch small"
-                        class:selected={editColor === c}
-                        style="background: {c}"
-                        onclick={() => (editColor = c)}
-                      ></span>
-                    {/each}
+                  <div class="edit-form">
+                    <input
+                      class="edit-input"
+                      type="text"
+                      bind:this={editInputEl}
+                      bind:value={editName}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter") commitEdit();
+                        if (e.key === "Escape") cancelEdit();
+                      }}
+                    />
+                    <div class="edit-colors">
+                      {#each presetColors as c}
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span
+                          class="color-swatch small"
+                          class:selected={editColor === c}
+                          style="background: {c}"
+                          onclick={() => (editColor = c)}
+                        ></span>
+                      {/each}
+                    </div>
+                    <div class="edit-actions">
+                      <button class="edit-btn cancel" onclick={cancelEdit}>Cancel</button>
+                      <button class="edit-btn save" onclick={commitEdit} disabled={!editName.trim()}>Save</button>
+                    </div>
                   </div>
                 {:else}
                   <span class="profile-name">{profile.name}</span>
@@ -365,6 +378,14 @@
     color: #ff7b72;
   }
 
+  .edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
   .edit-input {
     background: #0d1117;
     border: 1px solid #58a6ff;
@@ -374,7 +395,7 @@
     font-family: inherit;
     padding: 4px 8px;
     outline: none;
-    width: 140px;
+    width: 100%;
     -webkit-user-select: text;
     user-select: text;
   }
@@ -383,6 +404,44 @@
     display: flex;
     gap: 4px;
     align-items: center;
+  }
+
+  .edit-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .edit-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s;
+  }
+
+  .edit-btn.cancel {
+    background: #3a3a3c;
+    color: #e6edf3;
+  }
+
+  .edit-btn.cancel:hover {
+    background: #48484a;
+  }
+
+  .edit-btn.save {
+    background: #238636;
+    color: #fff;
+  }
+
+  .edit-btn.save:hover:not(:disabled) {
+    background: #2ea043;
+  }
+
+  .edit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .color-swatch {

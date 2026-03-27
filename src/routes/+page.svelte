@@ -74,6 +74,10 @@
     }
   }
 
+  function syncTrayProfiles() {
+    invoke("sync_tray_profiles").catch(console.error);
+  }
+
   onMount(async () => {
     // Determine which profile this window should use
     const urlParams = new URLSearchParams(window.location.search);
@@ -81,6 +85,7 @@
     await appState.initializeWithProfile(profileIdParam);
 
     await appState.loadProjects();
+    syncTrayProfiles();
 
     unlistenExit = await listen("terminal-exit", (event: any) => {
       const { id } = event.payload;
@@ -239,7 +244,7 @@
 {/if}
 
 {#if showProfiles}
-  <ProfileManager onClose={() => (showProfiles = false)} />
+  <ProfileManager onClose={() => { showProfiles = false; syncTrayProfiles(); }} />
 {/if}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
