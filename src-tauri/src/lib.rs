@@ -1,3 +1,4 @@
+mod profiles;
 mod terminal;
 mod worktree;
 
@@ -130,6 +131,92 @@ fn read_git_file_base64(worktree_path: String, file: String) -> Result<String, S
     worktree::read_git_file_base64(&worktree_path, &file)
 }
 
+// --- Profile Commands ---
+
+#[tauri::command]
+fn list_profiles(state: State<'_, profiles::ProfileState>) -> Result<Vec<profiles::Profile>, String> {
+    let mgr = state.lock().map_err(|e| e.to_string())?;
+    Ok(mgr.list())
+}
+
+#[tauri::command]
+fn get_profile(id: String, state: State<'_, profiles::ProfileState>) -> Result<profiles::Profile, String> {
+    let mgr = state.lock().map_err(|e| e.to_string())?;
+    mgr.get(&id)
+}
+
+#[tauri::command]
+fn get_default_profile(state: State<'_, profiles::ProfileState>) -> Result<profiles::Profile, String> {
+    let mgr = state.lock().map_err(|e| e.to_string())?;
+    Ok(mgr.get_default())
+}
+
+#[tauri::command]
+fn create_profile(name: String, color: String, state: State<'_, profiles::ProfileState>) -> Result<profiles::Profile, String> {
+    let mut mgr = state.lock().map_err(|e| e.to_string())?;
+    mgr.create(&name, &color)
+}
+
+#[tauri::command]
+fn update_profile(id: String, name: String, color: String, state: State<'_, profiles::ProfileState>) -> Result<profiles::Profile, String> {
+    let mut mgr = state.lock().map_err(|e| e.to_string())?;
+    mgr.update(&id, &name, &color)
+}
+
+#[tauri::command]
+fn update_profile_settings(id: String, settings: profiles::ProfileSettings, state: State<'_, profiles::ProfileState>) -> Result<(), String> {
+    let mut mgr = state.lock().map_err(|e| e.to_string())?;
+    mgr.update_settings(&id, settings)
+}
+
+#[tauri::command]
+fn delete_profile(id: String, state: State<'_, profiles::ProfileState>) -> Result<(), String> {
+    let mut mgr = state.lock().map_err(|e| e.to_string())?;
+    mgr.delete(&id)
+}
+
+#[tauri::command]
+fn set_default_profile(id: String, state: State<'_, profiles::ProfileState>) -> Result<(), String> {
+    let mut mgr = state.lock().map_err(|e| e.to_string())?;
+    mgr.set_default(&id)
+}
+
+#[tauri::command]
+async fn open_profile_window(
+    profile_id: String,
+    profile_name: String,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri::WebviewWindowBuilder;
+    use tauri::WebviewUrl;
+
+    let window_label = format!("profile-{}", &profile_id[..8.min(profile_id.len())]);
+
+    if let Some(window) = app.get_webview_window(&window_label) {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let url = format!("index.html?profile={}", profile_id);
+
+    WebviewWindowBuilder::new(
+        &app,
+        &window_label,
+        WebviewUrl::App(url.into()),
+    )
+    .title(format!("Agentic IDE - {}", profile_name))
+    .inner_size(1440.0, 900.0)
+    .min_inner_size(1024.0, 600.0)
+    .decorations(true)
+    .title_bar_style(tauri::TitleBarStyle::Overlay)
+    .hidden_title(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 // --- App Setup ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -162,8 +249,22 @@ pub fn run() {
             unstage_file,
             read_file_base64,
             read_git_file_base64,
+            list_profiles,
+            get_profile,
+            get_default_profile,
+            create_profile,
+            update_profile,
+            update_profile_settings,
+            delete_profile,
+            set_default_profile,
+            open_profile_window,
         ])
         .setup(|app| {
+            // Initialize profile manager
+            let app_data_dir = app.path().app_data_dir().map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+            let profile_manager = profiles::ProfileManager::load(app_data_dir);
+            app.manage(Mutex::new(profile_manager) as profiles::ProfileState);
+
             // Build tray menu
             let open_item = MenuItem::with_id(app, "open", "Open Agentic IDE", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -216,10 +317,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Hide to tray instead of closing
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .run(tauri::generate_context!())

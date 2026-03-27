@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { updateProfileSettings } from "$lib/profiles.svelte";
+import type { ProfileSettings } from "$lib/profiles.svelte";
+import { profileState } from "$lib/profiles.svelte";
 
 export interface WorktreeInfo {
   path: string;
@@ -47,17 +50,16 @@ class AppState {
   stagedDiff = $state<string>("");
   gitLog = $state<LogEntry[]>([]);
   gitStatus = $state<FileStatus[]>([]);
+  profileId = $state<string>("");
   sidebarWidth = $state(280);
   sidebarCollapsed = $state(false);
   rightPanelCollapsed = $state(false);
-  layout = $state<LayoutMode>(
-    (localStorage.getItem("agentic-ide-layout") as LayoutMode) || "vertical"
-  );
+  layout = $state<LayoutMode>("vertical");
   private _pollInterval: ReturnType<typeof setInterval> | null = null;
   private _pollActive = false;
   private _lastTerminalPerWorktree = new Map<string, string>();
 
-  async addProject(path: string) {
+  async addProject(path: string): Promise<ProjectInfo | null> {
     try {
       const info: ProjectInfo = await invoke("get_project_info", {
         projectPath: path,
@@ -65,16 +67,16 @@ class AppState {
       const exists = this.projects.some((p) => p.path === info.path);
       if (!exists) {
         this.projects.push(info);
-        if (!this.activeProject) {
-          this.activeProject = info.path;
-          if (info.worktrees.length > 0) {
-            this.activeWorktree = info.worktrees[0].path;
-          }
-        }
         this.saveProjects();
       }
+      this.activeProject = info.path;
+      if (info.worktrees.length > 0) {
+        this.activeWorktree = info.worktrees[0].path;
+      }
+      return info;
     } catch (e) {
       console.error("Failed to add project:", e);
+      return null;
     }
   }
 
@@ -259,6 +261,13 @@ class AppState {
   setLayout(mode: LayoutMode) {
     this.layout = mode;
     localStorage.setItem("agentic-ide-layout", mode);
+    // Also persist to profile backend
+    if (this.profileId) {
+      updateProfileSettings(this.profileId, {
+        layout: mode,
+        sidebar_width: this.sidebarWidth,
+      }).catch(console.error);
+    }
   }
 
   saveProjects() {
@@ -273,6 +282,20 @@ class AppState {
       for (const path of paths) {
         await this.addProject(path);
       }
+    }
+  }
+
+  async initializeWithProfile(profileId?: string) {
+    await profileState.initialize(profileId);
+    const profile = profileState.activeProfile;
+    if (profile) {
+      this.profileId = profile.id;
+      this.layout = profile.settings.layout as LayoutMode;
+      this.sidebarWidth = profile.settings.sidebar_width;
+    } else {
+      // Fallback to localStorage if profile system not available
+      const stored = localStorage.getItem("agentic-ide-layout") as LayoutMode;
+      if (stored) this.layout = stored;
     }
   }
 }

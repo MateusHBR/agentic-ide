@@ -4,32 +4,45 @@
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import type { UnlistenFn } from "@tauri-apps/api/event";
+  import { open } from "@tauri-apps/plugin-dialog";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import TerminalPanel from "$lib/components/TerminalPanel.svelte";
   import RightPanel from "$lib/components/RightPanel.svelte";
   import WorktreeSwitcher from "$lib/components/WorktreeSwitcher.svelte";
   import Settings from "$lib/components/Settings.svelte";
+  import ProfileManager from "$lib/components/ProfileManager.svelte";
   import UpdateToast from "$lib/components/UpdateToast.svelte";
   import { appState } from "$lib/state.svelte";
+  import { profileState } from "$lib/profiles.svelte";
 
   let isResizingSidebar = $state(false);
   let isResizingRight = $state(false);
   let rightPanelWidth = $state(340);
   let showWorktreeSwitcher = $state(false);
   let showSettings = $state(false);
+  let showProfiles = $state(false);
   let unlistenExit: UnlistenFn | null = null;
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.metaKey && e.key === "p") {
+      e.preventDefault();
+      showProfiles = !showProfiles;
+      showSettings = false;
+      showWorktreeSwitcher = false;
+      return;
+    }
     if (e.metaKey && e.key === "w") {
       e.preventDefault();
       showWorktreeSwitcher = !showWorktreeSwitcher;
       showSettings = false;
+      showProfiles = false;
       return;
     }
     if (e.metaKey && e.key === ",") {
       e.preventDefault();
       showSettings = !showSettings;
       showWorktreeSwitcher = false;
+      showProfiles = false;
       return;
     }
     if (e.metaKey && e.key === "b") {
@@ -42,7 +55,7 @@
       appState.rightPanelCollapsed = !appState.rightPanelCollapsed;
       return;
     }
-    if (showWorktreeSwitcher || showSettings) return;
+    if (showWorktreeSwitcher || showSettings || showProfiles) return;
     if (e.metaKey && e.key === "n") {
       e.preventDefault();
       if (appState.activeWorktree) {
@@ -62,6 +75,11 @@
   }
 
   onMount(async () => {
+    // Determine which profile this window should use
+    const urlParams = new URLSearchParams(window.location.search);
+    const profileIdParam = urlParams.get("profile") ?? undefined;
+    await appState.initializeWithProfile(profileIdParam);
+
     await appState.loadProjects();
 
     unlistenExit = await listen("terminal-exit", (event: any) => {
@@ -96,6 +114,27 @@
       appState.selectWorktree(appState.activeProject, worktreePath);
     } catch (e) {
       console.error("Failed to create terminal:", e);
+    }
+  }
+
+  async function handleAddProject() {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select a Git project folder",
+      });
+      if (selected) {
+        const info = await appState.addProject(selected);
+        if (info && info.worktrees.length > 0) {
+          const mainWt = info.worktrees.find((w: any) => w.is_main) || info.worktrees[0];
+          if (mainWt) {
+            await handleNewTerminal(mainWt.path);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to add project:", e);
     }
   }
 
@@ -199,10 +238,15 @@
   <Settings onClose={() => (showSettings = false)} />
 {/if}
 
+{#if showProfiles}
+  <ProfileManager onClose={() => (showProfiles = false)} />
+{/if}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="titlebar"
   data-tauri-drag-region
+  style="border-bottom: 2px solid {profileState.activeProfile?.color ?? 'transparent'}"
   onmousedown={() => getCurrentWindow().startDragging()}
 ></div>
 
@@ -220,9 +264,8 @@
     <div class="empty-terminal">
       <div class="empty-content">
         <div class="empty-icon">⬡</div>
-        <h2>Agentic IDE</h2>
-        <p>Add a project and create a terminal to get started.</p>
-        <p class="hint">Use the sidebar to add a project, then click "New Terminal" on a worktree.</p>
+        <h2>No Terminal Open</h2>
+        <p>Click "New Terminal" on a worktree in the sidebar, or press <kbd>&#8984;N</kbd></p>
       </div>
     </div>
   {/if}
@@ -283,7 +326,7 @@
       </div>
     {:else}
       <div class="sidebar-panel" style="width: {appState.sidebarWidth}px">
-        <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} />
+        <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} onOpenProfiles={() => (showProfiles = true)} />
       </div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="resize-handle vertical-handle" onmousedown={startResizeSidebar}></div>
@@ -321,7 +364,7 @@
         </div>
       {:else}
         <div class="sidebar-panel" style="width: {appState.sidebarWidth}px">
-          <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} />
+          <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} onOpenProfiles={() => (showProfiles = true)} />
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="resize-handle vertical-handle" onmousedown={startResizeSidebar}></div>
@@ -666,8 +709,14 @@
     margin-bottom: 4px;
   }
 
-  .hint {
-    font-size: 12px !important;
-    margin-top: 8px !important;
+  .empty-content kbd {
+    display: inline-flex;
+    padding: 2px 6px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    color: #8b949e;
   }
 </style>
