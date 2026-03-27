@@ -113,6 +113,7 @@
         if (info && info.worktrees.length > 0) {
           const mainWt = info.worktrees.find((w: any) => w.is_main) || info.worktrees[0];
           if (mainWt) {
+            appState.selectWorktree(info.path, mainWt.path);
             await handleNewTerminal(mainWt.path);
           }
         }

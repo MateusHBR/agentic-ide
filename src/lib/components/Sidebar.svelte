@@ -50,9 +50,12 @@
       if (selected) {
         const info = await appState.addProject(selected);
         if (info) {
+          const mainWt = info.worktrees.find((w) => w.is_main) || info.worktrees[0];
+          if (mainWt) {
+            appState.selectWorktree(info.path, mainWt.path);
+          }
           expandedProjects = new Set([...expandedProjects, info.path]);
           // Auto-open a terminal for the main worktree
-          const mainWt = info.worktrees.find((w) => w.is_main) || info.worktrees[0];
           if (mainWt) {
             onNewTerminal(mainWt.path);
           }

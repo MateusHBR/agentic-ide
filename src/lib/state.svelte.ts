@@ -65,12 +65,13 @@ class AppState {
       const exists = this.projects.some((p) => p.path === info.path);
       if (!exists) {
         this.projects.push(info);
+        if (!this.activeProject) {
+          this.activeProject = info.path;
+          if (info.worktrees.length > 0) {
+            this.activeWorktree = info.worktrees[0].path;
+          }
+        }
         this.saveProjects();
-      }
-      // Always switch to the newly added project
-      this.activeProject = info.path;
-      if (info.worktrees.length > 0) {
-        this.activeWorktree = info.worktrees[0].path;
       }
       return info;
     } catch (e) {
