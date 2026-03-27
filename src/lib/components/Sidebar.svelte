@@ -13,6 +13,16 @@
   let { onNewTerminal, onOpenSettings, onToggleSidebar, onToggleRightPanel }: Props = $props();
 
   let expandedProjects = $state<Set<string>>(new Set());
+  let projectListEl = $state<HTMLDivElement | null>(null);
+
+  // Scroll active worktree into view when it changes
+  $effect(() => {
+    appState.activeWorktree;
+    requestAnimationFrame(() => {
+      const activeEl = projectListEl?.querySelector(".worktree-item.active") as HTMLElement | null;
+      activeEl?.scrollIntoView({ block: "nearest" });
+    });
+  });
 
   function toggleProject(path: string) {
     const next = new Set(expandedProjects);
@@ -173,7 +183,7 @@
     </div>
   </div>
 
-  <div class="project-list">
+  <div class="project-list" bind:this={projectListEl}>
     {#each appState.projects as project}
       <div class="project-entry">
         <!-- svelte-ignore a11y_click_events_have_key_events -->
