@@ -68,6 +68,25 @@
     return appState.activeWorktree === worktreePath;
   }
 
+  // --- Context menu ---
+  let contextMenu = $state<{ x: number; y: number; projectPath: string } | null>(null);
+
+  function showContextMenu(e: MouseEvent, projectPath: string) {
+    e.preventDefault();
+    contextMenu = { x: e.clientX, y: e.clientY, projectPath };
+  }
+
+  function closeContextMenu() {
+    contextMenu = null;
+  }
+
+  function removeProjectFromMenu() {
+    if (contextMenu) {
+      appState.removeProject(contextMenu.projectPath);
+      contextMenu = null;
+    }
+  }
+
   // --- Rename ---
   let editingTerminalId = $state<string | null>(null);
   let editValue = $state("");
@@ -162,6 +181,7 @@
             }
             toggleProject(project.path);
           }}
+          oncontextmenu={(e) => showContextMenu(e, project.path)}
         >
           <div class="project-icon">
             <span class="icon-letter">{project.name[0]?.toUpperCase()}</span>
@@ -273,7 +293,59 @@
   </div>
 </div>
 
+{#if contextMenu}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="context-overlay" onclick={closeContextMenu}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="context-menu" style="left: {contextMenu.x}px; top: {contextMenu.y}px">
+      <div class="context-item danger" onclick={removeProjectFromMenu}>
+        Remove Project
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  .context-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 250;
+  }
+
+  .context-menu {
+    position: fixed;
+    background: #2a2a2c;
+    border: 1px solid #3a3a3c;
+    border-radius: 8px;
+    padding: 4px;
+    min-width: 160px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    z-index: 251;
+  }
+
+  .context-item {
+    padding: 6px 12px;
+    font-size: 13px;
+    color: #e6edf3;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .context-item:hover {
+    background: #3a3a3c;
+  }
+
+  .context-item.danger {
+    color: #ff7b72;
+  }
+
+  .context-item.danger:hover {
+    background: rgba(255, 123, 114, 0.15);
+  }
+
   .sidebar {
     display: flex;
     flex-direction: column;
