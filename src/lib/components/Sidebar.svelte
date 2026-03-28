@@ -292,6 +292,12 @@
                         />
                       {:else}
                         <span class="terminal-name">{term.name}</span>
+                        <!-- svelte-ignore a11y_click_events_have_key_events -->
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <span
+                          class="terminal-close-btn"
+                          onclick={(e) => { e.stopPropagation(); invoke("close_terminal", { id: term.id }).catch(() => {}); appState.removeTerminal(term.id); }}
+                        >✕</span>
                       {/if}
                     </div>
                   {/each}
@@ -684,6 +690,20 @@
     width: 100%;
     -webkit-user-select: text;
     user-select: text;
+  }
+
+  .terminal-close-btn {
+    margin-left: auto;
+    font-size: 10px;
+    color: #484f58;
+    border-radius: 3px;
+    padding: 1px 3px;
+    transition: all 0.15s;
+  }
+
+  .terminal-close-btn:hover {
+    color: #ff7b72;
+    background: rgba(255, 123, 114, 0.15);
   }
 
   .sidebar-footer {

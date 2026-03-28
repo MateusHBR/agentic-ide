@@ -324,6 +324,12 @@
           {:else}
             {#if tabIdx < 9}<span class="tab-shortcut">⌘{tabIdx + 1}</span>{/if}
             {term.name}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <span
+              class="tab-close-btn"
+              onclick={(e) => { e.stopPropagation(); invoke("close_terminal", { id: term.id }).catch(() => {}); appState.removeTerminal(term.id); }}
+            >✕</span>
           {/if}
         </div>
       {/each}
@@ -682,6 +688,20 @@
 
   .terminal-tab-btn.active .tab-shortcut {
     color: #6e7681;
+  }
+
+  .tab-close-btn {
+    margin-left: 6px;
+    font-size: 10px;
+    color: #484f58;
+    border-radius: 3px;
+    padding: 1px 3px;
+    transition: all 0.15s;
+  }
+
+  .tab-close-btn:hover {
+    color: #ff7b72;
+    background: rgba(255, 123, 114, 0.15);
   }
 
   .tab-rename-input {
