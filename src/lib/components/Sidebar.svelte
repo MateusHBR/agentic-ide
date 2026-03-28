@@ -17,6 +17,14 @@
   let expandedProjects = $state<Set<string>>(new Set());
   let projectListEl = $state<HTMLDivElement | null>(null);
 
+  // Auto-expand the active project (e.g. when added from onboarding)
+  $effect(() => {
+    const active = appState.activeProject;
+    if (active && !expandedProjects.has(active)) {
+      expandedProjects = new Set([...expandedProjects, active]);
+    }
+  });
+
   // Scroll active worktree into view when it changes
   $effect(() => {
     appState.activeWorktree;
