@@ -40,6 +40,7 @@ fn extract_valid_utf8(bytes: &[u8]) -> (String, Vec<u8>) {
 struct TerminalInstance {
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
+    window_label: Option<String>,
 }
 
 pub struct TerminalManager {
@@ -57,6 +58,7 @@ impl TerminalManager {
         &mut self,
         cwd: &str,
         cmd: Option<&str>,
+        window_label: Option<&str>,
         app: AppHandle,
     ) -> Result<String, String> {
         let id = Uuid::new_v4().to_string();
@@ -94,6 +96,7 @@ impl TerminalManager {
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
         let term_id = id.clone();
+        let emit_label = window_label.map(|s| s.to_string());
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             let mut pending: Vec<u8> = Vec::new();
@@ -142,6 +145,7 @@ impl TerminalManager {
             TerminalInstance {
                 writer,
                 master: pair.master,
+                window_label: window_label.map(|s| s.to_string()),
             },
         );
 

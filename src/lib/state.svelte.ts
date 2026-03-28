@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { updateProfileSettings } from "$lib/profiles.svelte";
+import type { ProfileSettings } from "$lib/profiles.svelte";
+import { profileState } from "$lib/profiles.svelte";
 
 export interface WorktreeInfo {
   path: string;
@@ -47,12 +50,11 @@ class AppState {
   stagedDiff = $state<string>("");
   gitLog = $state<LogEntry[]>([]);
   gitStatus = $state<FileStatus[]>([]);
+  profileId = $state<string>("");
   sidebarWidth = $state(280);
   sidebarCollapsed = $state(false);
   rightPanelCollapsed = $state(false);
-  layout = $state<LayoutMode>(
-    (localStorage.getItem("agentic-ide-layout") as LayoutMode) || "vertical"
-  );
+  layout = $state<LayoutMode>("vertical");
   private _pollInterval: ReturnType<typeof setInterval> | null = null;
   private _pollActive = false;
   private _lastTerminalPerWorktree = new Map<string, string>();
@@ -67,6 +69,7 @@ class AppState {
         this.projects.push(info);
         this.saveProjects();
       }
+
       // Always switch to the newly added project
       this.activeProject = info.path;
       if (info.worktrees.length > 0) {
@@ -100,7 +103,7 @@ class AppState {
       const wtPaths = new Set(project.worktrees.map((w) => w.path));
       const toRemove = this.terminals.filter((t) => wtPaths.has(t.worktreePath));
       for (const term of toRemove) {
-        invoke("close_terminal", { id: term.id }).catch(() => {});
+        invoke("close_terminal", { id: term.id }).catch(() => { });
         this._lastTerminalPerWorktree.delete(term.worktreePath);
       }
       this.terminals = this.terminals.filter((t) => !wtPaths.has(t.worktreePath));
@@ -260,20 +263,53 @@ class AppState {
   setLayout(mode: LayoutMode) {
     this.layout = mode;
     localStorage.setItem("agentic-ide-layout", mode);
+    // Also persist to profile backend
+    if (this.profileId) {
+      updateProfileSettings(this.profileId, {
+        layout: mode,
+        sidebar_width: this.sidebarWidth,
+      }).catch(console.error);
+    }
+  }
+
+  private get _projectsKey(): string {
+    return this.profileId
+      ? `agentic-ide-projects-${this.profileId}`
+      : "agentic-ide-projects";
   }
 
   saveProjects() {
     const paths = this.projects.map((p) => p.path);
-    localStorage.setItem("agentic-ide-projects", JSON.stringify(paths));
+    localStorage.setItem(this._projectsKey, JSON.stringify(paths));
   }
 
   async loadProjects() {
-    const stored = localStorage.getItem("agentic-ide-projects");
+    const stored = localStorage.getItem(this._projectsKey);
     if (stored) {
-      const paths: string[] = JSON.parse(stored);
+      let paths: string[];
+      try {
+        paths = JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse stored projects, resetting:", e);
+        paths = [];
+      }
       for (const path of paths) {
         await this.addProject(path);
       }
+    }
+  }
+
+  async initializeWithProfile(profileId?: string) {
+    await profileState.initialize(profileId);
+    const profile = profileState.activeProfile;
+    if (profile) {
+      this.profileId = profile.id;
+      this.layout = profile.settings.layout as LayoutMode;
+      this.sidebarWidth = profile.settings.sidebar_width;
+    } else {
+      // Fallback to localStorage if profile system not available
+      const stored = localStorage.getItem("agentic-ide-layout") as LayoutMode;
+      if (stored) this.layout = stored;
     }
   }
 }

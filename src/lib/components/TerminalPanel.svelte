@@ -15,7 +15,6 @@
   let term: any;
   let fitAddon: any;
   let unlisten: UnlistenFn | null = null;
-  let unlistenExit: UnlistenFn | null = null;
   let resizeObserver: ResizeObserver | null = null;
 
   onMount(async () => {
@@ -78,13 +77,6 @@
       }
     });
 
-    unlistenExit = await listen("terminal-exit", (event: any) => {
-      const payload = event.payload;
-      if (payload.id === terminalId && term) {
-        term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
-      }
-    });
-
     // Send user input to backend
     term.onData((data: string) => {
       invoke("write_terminal", { id: terminalId, data }).catch(console.error);
@@ -116,7 +108,6 @@
 
   onDestroy(() => {
     unlisten?.();
-    unlistenExit?.();
     resizeObserver?.disconnect();
     term?.dispose();
   });

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -10,28 +9,40 @@
   import RightPanel from "$lib/components/RightPanel.svelte";
   import WorktreeSwitcher from "$lib/components/WorktreeSwitcher.svelte";
   import Settings from "$lib/components/Settings.svelte";
+  import ProfileManager from "$lib/components/ProfileManager.svelte";
   import UpdateToast from "$lib/components/UpdateToast.svelte";
   import Onboarding from "$lib/components/Onboarding.svelte";
   import { appState } from "$lib/state.svelte";
+  import { profileState } from "$lib/profiles.svelte";
 
   let isResizingSidebar = $state(false);
   let isResizingRight = $state(false);
   let rightPanelWidth = $state(340);
   let showWorktreeSwitcher = $state(false);
   let showSettings = $state(false);
+  let showProfiles = $state(false);
   let unlistenExit: UnlistenFn | null = null;
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.metaKey && e.key === "p") {
+      e.preventDefault();
+      showProfiles = !showProfiles;
+      showSettings = false;
+      showWorktreeSwitcher = false;
+      return;
+    }
     if (e.metaKey && e.key === "w") {
       e.preventDefault();
       showWorktreeSwitcher = !showWorktreeSwitcher;
       showSettings = false;
+      showProfiles = false;
       return;
     }
     if (e.metaKey && e.key === ",") {
       e.preventDefault();
       showSettings = !showSettings;
       showWorktreeSwitcher = false;
+      showProfiles = false;
       return;
     }
     if (e.metaKey && e.key === "b") {
@@ -44,7 +55,7 @@
       appState.rightPanelCollapsed = !appState.rightPanelCollapsed;
       return;
     }
-    if (showWorktreeSwitcher || showSettings) return;
+    if (showWorktreeSwitcher || showSettings || showProfiles) return;
     if (e.metaKey && e.key === "n") {
       e.preventDefault();
       if (appState.activeWorktree) {
@@ -63,10 +74,20 @@
     }
   }
 
-  onMount(async () => {
-    await appState.loadProjects();
+  function syncTrayProfiles() {
+    invoke("sync_tray_profiles").catch(console.error);
+  }
 
-    unlistenExit = await listen("terminal-exit", (event: any) => {
+  onMount(async () => {
+    // Determine which profile this window should use
+    const urlParams = new URLSearchParams(window.location.search);
+    const profileIdParam = urlParams.get("profile") ?? undefined;
+    await appState.initializeWithProfile(profileIdParam);
+
+    await appState.loadProjects();
+    syncTrayProfiles();
+
+    unlistenExit = await getCurrentWindow().listen("terminal-exit", (event: any) => {
       const { id } = event.payload;
       invoke("close_terminal", { id }).catch(() => {});
       appState.removeTerminal(id);
@@ -78,6 +99,10 @@
 
   onDestroy(() => {
     unlistenExit?.();
+    // Close all terminals owned by this window
+    for (const term of appState.terminals) {
+      invoke("close_terminal", { id: term.id }).catch(() => {});
+    }
     window.removeEventListener("keydown", handleKeydown, true);
     appState.stopPolling();
   });
@@ -87,6 +112,7 @@
       const terminalId: string = await invoke("create_terminal", {
         cwd: worktreePath,
         cmd: null,
+        windowLabel: getCurrentWindow().label,
       });
 
       const worktreeTerminals = appState.getTerminalsForWorktree(worktreePath);
@@ -130,6 +156,13 @@
     };
     const onUp = () => {
       isResizingSidebar = false;
+      // Persist sidebar width to profile
+      if (appState.profileId) {
+        invoke("update_profile_settings", {
+          id: appState.profileId,
+          settings: { layout: appState.layout, sidebar_width: appState.sidebarWidth }
+        }).catch(console.error);
+      }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -222,10 +255,15 @@
   <Settings onClose={() => (showSettings = false)} />
 {/if}
 
+{#if showProfiles}
+  <ProfileManager onClose={() => { showProfiles = false; syncTrayProfiles(); }} />
+{/if}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="titlebar"
   data-tauri-drag-region
+  style="border-bottom: 2px solid {profileState.activeProfile?.color ?? 'transparent'}"
   onmousedown={() => getCurrentWindow().startDragging()}
 ></div>
 
@@ -307,7 +345,7 @@
       </div>
     {:else}
       <div class="sidebar-panel" style="width: {appState.sidebarWidth}px">
-        <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} />
+        <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} onOpenProfiles={() => (showProfiles = true)} />
       </div>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="resize-handle vertical-handle" onmousedown={startResizeSidebar}></div>
@@ -345,7 +383,7 @@
         </div>
       {:else}
         <div class="sidebar-panel" style="width: {appState.sidebarWidth}px">
-          <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} />
+          <Sidebar onNewTerminal={handleNewTerminal} onOpenSettings={() => (showSettings = true)} onToggleSidebar={() => (appState.sidebarCollapsed = true)} onToggleRightPanel={() => (appState.rightPanelCollapsed = !appState.rightPanelCollapsed)} onOpenProfiles={() => (showProfiles = true)} />
         </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="resize-handle vertical-handle" onmousedown={startResizeSidebar}></div>
