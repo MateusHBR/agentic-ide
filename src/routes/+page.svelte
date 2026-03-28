@@ -263,7 +263,7 @@
 <div
   class="titlebar"
   data-tauri-drag-region
-  style="border-bottom: 2px solid {profileState.activeProfile?.color ?? 'transparent'}"
+  style="background: {profileState.profiles.length > 1 ? (profileState.activeProfile?.color ?? 'transparent') : 'transparent'}"
   onmousedown={() => getCurrentWindow().startDragging()}
 ></div>
 
@@ -439,6 +439,7 @@
     height: 100vh;
     width: 100vw;
     overflow: hidden;
+    padding-top: 38px;
   }
 
   .app-layout.vertical {
@@ -626,6 +627,7 @@
   .terminal-tab.visible {
     display: flex;
     flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -633,7 +635,7 @@
     display: flex;
     background: #161b22;
     border-top: 1px solid #30363d;
-    padding: 0 8px;
+    padding: 4px 8px;
     flex-shrink: 0;
     overflow-x: auto;
     overflow-y: hidden;

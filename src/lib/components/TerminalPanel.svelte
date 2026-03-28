@@ -58,15 +58,23 @@
     term.loadAddon(fitAddon);
     term.open(terminalEl);
 
-    // Small delay to ensure DOM is ready
-    requestAnimationFrame(() => {
-      fitAddon.fit();
-      // Notify backend of initial size
+    function safeResize() {
+      if (!fitAddon || !term) return;
+      const dims = fitAddon.proposeDimensions();
+      if (!dims) return;
+      // Reserve rows for the terminal tabs bar that overlaps the bottom
+      const rows = Math.max(1, dims.rows - 1);
+      term.resize(dims.cols, rows);
       invoke("resize_terminal", {
         id: terminalId,
-        rows: term.rows,
-        cols: term.cols,
+        rows,
+        cols: dims.cols,
       }).catch(console.error);
+    }
+
+    // Small delay to ensure DOM is ready
+    requestAnimationFrame(() => {
+      safeResize();
     });
 
     // Listen for terminal output from backend
@@ -84,14 +92,7 @@
 
     // Handle resize
     resizeObserver = new ResizeObserver(() => {
-      if (fitAddon && term) {
-        fitAddon.fit();
-        invoke("resize_terminal", {
-          id: terminalId,
-          rows: term.rows,
-          cols: term.cols,
-        }).catch(console.error);
-      }
+      safeResize();
     });
     resizeObserver.observe(terminalEl);
 
