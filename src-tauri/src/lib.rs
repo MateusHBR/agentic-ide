@@ -410,6 +410,12 @@ pub fn run() {
                             tauri::async_runtime::spawn(async move {
                                 let _ = open_profile_window(profile_id, profile_name, app_clone).await;
                             });
+                            // Check for updates
+                            let app_handle = app.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_secs(2));
+                                let _ = app_handle.emit("check-for-updates", ());
+                            });
                         }
                         _ => {}
                     }
