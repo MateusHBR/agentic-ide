@@ -3,16 +3,28 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { appState } from "$lib/state.svelte";
   import type { ProjectInfo, WorktreeInfo } from "$lib/state.svelte";
+  import { profileState } from "$lib/profiles.svelte";
 
   interface Props {
     onNewTerminal: (worktreePath: string) => void;
     onOpenSettings: () => void;
     onToggleSidebar: () => void;
     onToggleRightPanel: () => void;
+    onOpenProfiles: () => void;
   }
-  let { onNewTerminal, onOpenSettings, onToggleSidebar, onToggleRightPanel }: Props = $props();
+  let { onNewTerminal, onOpenSettings, onToggleSidebar, onToggleRightPanel, onOpenProfiles }: Props = $props();
 
   let expandedProjects = $state<Set<string>>(new Set());
+  let projectListEl = $state<HTMLDivElement | null>(null);
+
+  // Scroll active worktree into view when it changes
+  $effect(() => {
+    appState.activeWorktree;
+    requestAnimationFrame(() => {
+      const activeEl = projectListEl?.querySelector(".worktree-item.active") as HTMLElement | null;
+      activeEl?.scrollIntoView({ block: "nearest" });
+    });
+  });
 
   function toggleProject(path: string) {
     const next = new Set(expandedProjects);
@@ -173,7 +185,7 @@
     </div>
   </div>
 
-  <div class="project-list">
+  <div class="project-list" bind:this={projectListEl}>
     {#each appState.projects as project}
       <div class="project-entry">
         <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -205,7 +217,7 @@
           </div>
         </div>
 
-        {#if isExpanded(project.path) || true}
+        {#if isExpanded(project.path)}
           <div class="worktree-list">
             {#each project.worktrees as wt, i}
               <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -290,6 +302,12 @@
     <div class="footer-btn" onclick={addProject}>
       <span class="footer-icon">+</span>
       <span>Add Project...</span>
+    </div>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="footer-btn" onclick={onOpenProfiles} title="Manage Profiles">
+      <span class="profile-dot" style="background: {profileState.activeProfile?.color ?? '#58a6ff'}"></span>
+      <span class="footer-label">{profileState.activeProfile?.name ?? 'Default'}</span>
     </div>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -685,5 +703,18 @@
     line-height: 1;
     width: 18px;
     text-align: center;
+  }
+
+  .profile-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .footer-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

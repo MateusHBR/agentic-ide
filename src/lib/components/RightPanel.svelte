@@ -349,6 +349,26 @@
   let hasUnstaged = $derived(unstagedFiles.length > 0 || unstagedStatusOnly.length > 0);
   let hasStaged = $derived(stagedFiles.length > 0 || stagedStatusOnly.length > 0);
 
+  function collapseAllFiles(prefix: string, files: DiffFile[]) {
+    const next = new Set(collapsedFiles);
+    for (const f of files) {
+      next.add(prefix + f.file);
+    }
+    collapsedFiles = next;
+  }
+
+  function expandAllFiles(prefix: string, files: DiffFile[]) {
+    const next = new Set(collapsedFiles);
+    for (const f of files) {
+      next.delete(prefix + f.file);
+    }
+    collapsedFiles = next;
+  }
+
+  function allFilesCollapsed(prefix: string, files: DiffFile[]): boolean {
+    return files.length > 0 && files.every((f) => collapsedFiles.has(prefix + f.file));
+  }
+
   // Auto-load image previews for image files in status
   $effect(() => {
     const allFiles = appState.gitStatus;
@@ -496,6 +516,9 @@
                 <span class="section-spacer"></span>
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span class="collapse-all-btn" onclick={(e) => { e.stopPropagation(); allFilesCollapsed("unstaged:", unstagedFiles) ? expandAllFiles("unstaged:", unstagedFiles) : collapseAllFiles("unstaged:", unstagedFiles); }}>{allFilesCollapsed("unstaged:", unstagedFiles) ? "Expand All" : "Collapse All"}</span>
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <span class="stage-all-btn" onclick={(e) => { e.stopPropagation(); stageAll(); }}>Stage All</span>
               </div>
 
@@ -614,6 +637,9 @@
                 <span class="section-title">Staged Changes</span>
                 <span class="section-count">{stagedFiles.length + stagedStatusOnly.length}</span>
                 <span class="section-spacer"></span>
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span class="collapse-all-btn" onclick={(e) => { e.stopPropagation(); allFilesCollapsed("staged:", stagedFiles) ? expandAllFiles("staged:", stagedFiles) : collapseAllFiles("staged:", stagedFiles); }}>{allFilesCollapsed("staged:", stagedFiles) ? "Expand All" : "Collapse All"}</span>
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <span class="unstage-all-btn" onclick={(e) => { e.stopPropagation(); unstageAll(); }}>Unstage All</span>
@@ -1056,6 +1082,20 @@
 
   .section-spacer {
     flex: 1;
+  }
+
+  .collapse-all-btn {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b949e;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+
+  .collapse-all-btn:hover {
+    background: rgba(139, 148, 158, 0.15);
   }
 
   .stage-all-btn {
