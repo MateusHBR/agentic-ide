@@ -15,6 +15,16 @@
   let { onNewTerminal, onOpenSettings, onToggleSidebar, onToggleRightPanel, onOpenProfiles }: Props = $props();
 
   let expandedProjects = $state<Set<string>>(new Set());
+  let projectListEl = $state<HTMLDivElement | null>(null);
+
+  // Scroll active worktree into view when it changes
+  $effect(() => {
+    appState.activeWorktree;
+    requestAnimationFrame(() => {
+      const activeEl = projectListEl?.querySelector(".worktree-item.active") as HTMLElement | null;
+      activeEl?.scrollIntoView({ block: "nearest" });
+    });
+  });
 
   function toggleProject(path: string) {
     const next = new Set(expandedProjects);
@@ -50,8 +60,15 @@
         title: "Select a Git project folder",
       });
       if (selected) {
-        await appState.addProject(selected);
-        expandedProjects = new Set([...expandedProjects, selected]);
+        const info = await appState.addProject(selected);
+        if (info) {
+          expandedProjects = new Set([...expandedProjects, info.path]);
+          // Auto-open a terminal for the main worktree
+          const mainWt = info.worktrees.find((w) => w.is_main) || info.worktrees[0];
+          if (mainWt) {
+            onNewTerminal(mainWt.path);
+          }
+        }
       }
     } catch (e) {
       console.error("Failed to add project:", e);
@@ -168,7 +185,7 @@
     </div>
   </div>
 
-  <div class="project-list">
+  <div class="project-list" bind:this={projectListEl}>
     {#each appState.projects as project}
       <div class="project-entry">
         <!-- svelte-ignore a11y_click_events_have_key_events -->

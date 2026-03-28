@@ -11,6 +11,7 @@
   import Settings from "$lib/components/Settings.svelte";
   import ProfileManager from "$lib/components/ProfileManager.svelte";
   import UpdateToast from "$lib/components/UpdateToast.svelte";
+  import Onboarding from "$lib/components/Onboarding.svelte";
   import { appState } from "$lib/state.svelte";
   import { profileState } from "$lib/profiles.svelte";
 
@@ -276,6 +277,8 @@
         <TerminalPanel terminalId={term.id} worktreePath={term.worktreePath} />
       </div>
     {/each}
+  {:else if appState.projects.length === 0}
+    <Onboarding onAddProject={handleAddProject} />
   {:else}
     <div class="empty-terminal">
       <div class="empty-content">

@@ -69,6 +69,8 @@ class AppState {
         this.projects.push(info);
         this.saveProjects();
       }
+
+      // Always switch to the newly added project
       this.activeProject = info.path;
       if (info.worktrees.length > 0) {
         this.activeWorktree = info.worktrees[0].path;
@@ -101,7 +103,7 @@ class AppState {
       const wtPaths = new Set(project.worktrees.map((w) => w.path));
       const toRemove = this.terminals.filter((t) => wtPaths.has(t.worktreePath));
       for (const term of toRemove) {
-        invoke("close_terminal", { id: term.id }).catch(() => {});
+        invoke("close_terminal", { id: term.id }).catch(() => { });
         this._lastTerminalPerWorktree.delete(term.worktreePath);
       }
       this.terminals = this.terminals.filter((t) => !wtPaths.has(t.worktreePath));

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { appState } from "$lib/state.svelte";
   import type { ProjectInfo, WorktreeInfo } from "$lib/state.svelte";
 
@@ -14,9 +15,9 @@
     sublabel: string;
   }
 
-  let selectedIndex = $state(0);
   let searchQuery = $state("");
   let inputEl = $state<HTMLInputElement | null>(null);
+  let listEl = $state<HTMLDivElement | null>(null);
 
   // Flatten all worktrees into a single list
   let allItems = $derived.by(() => {
@@ -34,6 +35,19 @@
     return items;
   });
 
+  function getInitialIndex(): number {
+    const items: FlatItem[] = [];
+    for (const project of appState.projects) {
+      for (const wt of project.worktrees) {
+        items.push({ project, worktree: wt, label: "", sublabel: "" });
+      }
+    }
+    const idx = items.findIndex((item) => item.worktree.path === appState.activeWorktree);
+    return idx >= 0 ? idx : 0;
+  }
+
+  let selectedIndex = $state(getInitialIndex());
+
   let filteredItems = $derived.by(() => {
     if (!searchQuery.trim()) return allItems;
     const q = searchQuery.toLowerCase();
@@ -44,19 +58,34 @@
     );
   });
 
-  // Clamp selected index when filtered list changes
+  // Clamp selected index when search filters the list
   $effect(() => {
-    if (selectedIndex >= filteredItems.length) {
-      selectedIndex = Math.max(0, filteredItems.length - 1);
+    const len = filteredItems.length;
+    if (selectedIndex >= len) {
+      selectedIndex = Math.max(0, len - 1);
     }
   });
 
-  // Auto-focus input on mount
+  // Scroll to initial selection on mount
+  onMount(() => {
+    requestAnimationFrame(() => {
+      const item = listEl?.children[selectedIndex] as HTMLElement | undefined;
+      item?.scrollIntoView({ block: "nearest" });
+    });
+  });
+
   $effect(() => {
     if (inputEl) {
       inputEl.focus();
     }
   });
+
+  function scrollToSelected() {
+    requestAnimationFrame(() => {
+      const item = listEl?.children[selectedIndex] as HTMLElement | undefined;
+      item?.scrollIntoView({ block: "nearest" });
+    });
+  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
@@ -65,9 +94,11 @@
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       selectedIndex = Math.min(selectedIndex + 1, filteredItems.length - 1);
+      scrollToSelected();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       selectedIndex = Math.max(selectedIndex - 1, 0);
+      scrollToSelected();
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (filteredItems.length > 0) {
@@ -102,7 +133,7 @@
         placeholder="Switch worktree..."
       />
     </div>
-    <div class="item-list">
+    <div class="item-list" bind:this={listEl}>
       {#if filteredItems.length === 0}
         <div class="empty">No worktrees found</div>
       {:else}

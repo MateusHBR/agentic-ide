@@ -4,6 +4,7 @@
   import type { LayoutMode } from "$lib/state.svelte";
   import { isEnabled, enable, disable } from "@tauri-apps/plugin-autostart";
   import { check } from "@tauri-apps/plugin-updater";
+  import { relaunch } from "@tauri-apps/plugin-process";
 
   interface Props {
     onClose: () => void;
@@ -216,6 +217,7 @@
             </div>
           {:else if updateStatus === "ready"}
             <span class="update-text success">Update installed! Restart the app to apply.</span>
+            <button class="update-btn primary" onclick={() => relaunch()}>Restart</button>
           {:else if updateStatus === "error"}
             <span class="update-text error">Failed: {updateError}</span>
             <button class="update-btn" onclick={checkForUpdates}>Retry</button>
@@ -231,7 +233,7 @@
         </div>
         <div class="about-row">
           <span class="about-label">Version</span>
-          <span class="about-value">0.2.9</span>
+          <span class="about-value">0.2.10</span>
         </div>
       </div>
     </div>
